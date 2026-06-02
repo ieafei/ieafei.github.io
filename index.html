@@ -25,76 +25,66 @@
       </div>
     </header>
 
-    <!-- Module Navigation -->
-    <nav class="module-nav">
-      <a href="#module-vllm" class="module-nav__item module-nav__item--cyan">⚡ vLLM</a>
-      <a href="#module-langchain" class="module-nav__item module-nav__item--green">🦜 LangChain</a>
-      <a href="#module-dgp" class="module-nav__item module-nav__item--purple">🔺 DGP</a>
-    </nav>
+    <!-- Module Cards -->
+    <section class="modules">
+      <h2 class="section-title">
+        <span class="section-title__icon">📂</span>
+        Learning Modules
+      </h2>
+      <div class="modules__grid">
 
-    <!-- ==================== Module: vLLM ==================== -->
-    <section class="module" id="module-vllm">
-      <div class="module__header">
-        <div class="module__accent module__accent--cyan"></div>
-        <div class="module__info">
-          <h2 class="module__title">⚡ vLLM — LLM Inference Engine</h2>
-          <p class="module__desc">Deep dive into vLLM internals: architecture, scheduling, PagedAttention, speculative decoding, distributed inference.</p>
-        </div>
-        <span class="module__badge module__badge--active">Active</span>
-      </div>
-      <div class="module__cards">
-        <a href="notes/vllm/vllm_generate_flow.html" class="note-card">
-          <span class="note-card__icon">📄</span>
-          <div class="note-card__body">
-            <h4 class="note-card__title">generate() 总体流程</h4>
-            <p class="note-card__desc">追踪 llm.generate() 从用户调用到输出返回的完整执行路径</p>
+        <!-- vLLM Module -->
+        <a href="notes/vllm/index.html" class="module-card">
+          <div class="module-card__accent module-card__accent--cyan"></div>
+          <div class="module-card__content">
+            <div class="module-card__top">
+              <span class="module-card__emoji">⚡</span>
+              <span class="module-card__badge module-card__badge--active">Active</span>
+            </div>
+            <h3 class="module-card__title">vLLM</h3>
+            <p class="module-card__subtitle">LLM Inference Engine</p>
+            <p class="module-card__desc">Deep dive into vLLM internals: architecture, scheduling, PagedAttention, speculative decoding, distributed inference.</p>
+            <div class="module-card__footer">
+              <span class="module-card__count">1 note</span>
+              <span class="module-card__arrow">→</span>
+            </div>
           </div>
-          <span class="note-card__arrow">→</span>
         </a>
-        <a href="https://ieafei.github.io/vllm-study/" class="note-card note-card--ext" target="_blank">
-          <span class="note-card__icon">🔗</span>
-          <div class="note-card__body">
-            <h4 class="note-card__title">vLLM Study 完整笔记站</h4>
-            <p class="note-card__desc">包含模型架构、投机解码、分布式推理、Prefix Cache 等专题</p>
+
+        <!-- LangChain Module -->
+        <div class="module-card module-card--coming">
+          <div class="module-card__accent module-card__accent--green"></div>
+          <div class="module-card__content">
+            <div class="module-card__top">
+              <span class="module-card__emoji">🦜</span>
+              <span class="module-card__badge module-card__badge--soon">Coming Soon</span>
+            </div>
+            <h3 class="module-card__title">LangChain</h3>
+            <p class="module-card__subtitle">LLM Application Framework</p>
+            <p class="module-card__desc">Chains, agents, RAG pipelines, memory, and tool integration patterns.</p>
+            <div class="module-card__footer">
+              <span class="module-card__count">0 notes</span>
+            </div>
           </div>
-          <span class="note-card__arrow">↗</span>
-        </a>
-      </div>
-    </section>
+        </div>
 
-    <!-- ==================== Module: LangChain ==================== -->
-    <section class="module" id="module-langchain">
-      <div class="module__header">
-        <div class="module__accent module__accent--green"></div>
-        <div class="module__info">
-          <h2 class="module__title">🦜 LangChain — LLM Application Framework</h2>
-          <p class="module__desc">LangChain framework study: chains, agents, RAG pipelines, memory, tool integration patterns.</p>
+        <!-- DGP Module -->
+        <div class="module-card module-card--coming">
+          <div class="module-card__accent module-card__accent--purple"></div>
+          <div class="module-card__content">
+            <div class="module-card__top">
+              <span class="module-card__emoji">🔺</span>
+              <span class="module-card__badge module-card__badge--soon">Coming Soon</span>
+            </div>
+            <h3 class="module-card__title">DGP</h3>
+            <p class="module-card__subtitle">Digital Geometry Processing</p>
+            <p class="module-card__desc">网格处理、曲面参数化、离散微分几何、形状分析等。</p>
+            <div class="module-card__footer">
+              <span class="module-card__count">0 notes</span>
+            </div>
+          </div>
         </div>
-        <span class="module__badge module__badge--soon">Coming Soon</span>
-      </div>
-      <div class="module__cards module__cards--empty">
-        <div class="empty-state">
-          <span class="empty-state__icon">🚧</span>
-          <p class="empty-state__text">Notes in progress — stay tuned!</p>
-        </div>
-      </div>
-    </section>
 
-    <!-- ==================== Module: DGP ==================== -->
-    <section class="module" id="module-dgp">
-      <div class="module__header">
-        <div class="module__accent module__accent--purple"></div>
-        <div class="module__info">
-          <h2 class="module__title">🔺 DGP — Digital Geometry Processing</h2>
-          <p class="module__desc">数字几何处理学习笔记：网格处理、曲面参数化、离散微分几何、形状分析等。</p>
-        </div>
-        <span class="module__badge module__badge--soon">Coming Soon</span>
-      </div>
-      <div class="module__cards module__cards--empty">
-        <div class="empty-state">
-          <span class="empty-state__icon">🚧</span>
-          <p class="empty-state__text">Notes in progress — stay tuned!</p>
-        </div>
       </div>
     </section>
 
