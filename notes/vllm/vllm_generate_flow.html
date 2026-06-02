@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>vLLM generate() 总体流程 - ieafei's Learning Hub</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+  <style>
+    /* ===== Reset & Base ===== */
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    html { font-size: 16px; scroll-behavior: smooth; }
+    body {
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: #0b0f1a;
+      color: #e2e8f0;
+      line-height: 1.7;
+      overflow-x: hidden;
+    }
+    a { color: #38bdf8; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ===== Background ===== */
+    .bg-grid {
+      position: fixed; inset: 0; z-index: 0;
+      background-image:
+        linear-gradient(rgba(56, 189, 248, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(56, 189, 248, 0.03) 1px, transparent 1px);
+      background-size: 60px 60px;
+      pointer-events: none;
+    }
+
+    /* ===== Layout ===== */
+    .container {
+      position: relative; z-index: 1;
+      max-width: 900px; margin: 0 auto;
+      padding: 40px 24px 60px;
+    }
+
+    /* ===== Breadcrumb ===== */
+    .breadcrumb {
+      margin-bottom: 32px;
+      font-size: 0.85rem;
+      color: #64748b;
+    }
+    .breadcrumb a { color: #94a3b8; }
+    .breadcrumb a:hover { color: #38bdf8; }
+
+    /* ===== Title ===== */
+    .page-title {
+      font-size: 2rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #38bdf8, #818cf8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 12px;
+    }
+    .page-meta {
+      font-size: 0.88rem;
+      color: #64748b;
+      margin-bottom: 40px;
+    }
+
+    /* ===== Sections ===== */
+    .section { margin-bottom: 48px; }
+    .section-title {
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: #f1f5f9;
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+    }
+    .section-title .emoji { margin-right: 8px; }
+
+    h3 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #cbd5e1;
+      margin: 24px 0 12px;
+    }
+
+    p { margin-bottom: 14px; color: #94a3b8; }
+    ul, ol { margin: 0 0 14px 20px; color: #94a3b8; }
+    li { margin-bottom: 6px; }
+
+    /* ===== Code Block ===== */
+    .code-block {
+      position: relative;
+      margin: 16px 0 20px;
+      padding: 18px 20px;
+      border-radius: 10px;
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid rgba(148, 163, 184, 0.15);
+      overflow-x: auto;
+      font-family: "JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace;
+      font-size: 0.82rem;
+      line-height: 1.7;
+      color: #e2e8f0;
+    }
+    .code-block .comment { color: #64748b; }
+    .code-block .keyword { color: #c084fc; }
+    .code-block .func { color: #38bdf8; }
+    .code-block .string { color: #4ade80; }
+    .code-block .highlight-line {
+      display: block;
+      background: rgba(56, 189, 248, 0.08);
+      margin: 0 -20px;
+      padding: 0 20px;
+      border-left: 3px solid #38bdf8;
+    }
+
+    /* ===== Flow Diagram ===== */
+    .flow-diagram {
+      margin: 24px 0;
+      padding: 32px 24px;
+      border-radius: 12px;
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid rgba(148, 163, 184, 0.12);
+      overflow-x: auto;
+    }
+    .flow-steps {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0;
+    }
+    .flow-node {
+      position: relative;
+      width: 100%;
+      max-width: 600px;
+      padding: 16px 20px;
+      border-radius: 10px;
+      border: 1px solid rgba(99, 102, 241, 0.3);
+      background: rgba(99, 102, 241, 0.06);
+      text-align: left;
+    }
+    .flow-node__step {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      background: rgba(99, 102, 241, 0.2);
+      color: #a5b4fc;
+      margin-bottom: 6px;
+    }
+    .flow-node__title {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: #f1f5f9;
+      margin-bottom: 4px;
+    }
+    .flow-node__desc {
+      font-size: 0.82rem;
+      color: #94a3b8;
+      margin: 0;
+    }
+    .flow-node__code {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 0.78rem;
+      color: #38bdf8;
+    }
+    .flow-arrow {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 4px 0;
+      color: #475569;
+      font-size: 1.2rem;
+    }
+    .flow-arrow::after { content: "↓"; }
+
+    /* ===== Sub-flow (nested) ===== */
+    .sub-flow {
+      margin: 12px 0 0 20px;
+      padding: 12px 16px;
+      border-left: 2px solid rgba(56, 189, 248, 0.3);
+      background: rgba(56, 189, 248, 0.03);
+      border-radius: 0 8px 8px 0;
+    }
+    .sub-flow__item {
+      font-size: 0.82rem;
+      color: #94a3b8;
+      padding: 4px 0;
+      font-family: "JetBrains Mono", monospace;
+    }
+    .sub-flow__item + .sub-flow__item {
+      border-top: 1px solid rgba(148, 163, 184, 0.08);
+    }
+
+    /* ===== Info Box ===== */
+    .info-box {
+      margin: 16px 0;
+      padding: 14px 18px;
+      border-radius: 8px;
+      border-left: 4px solid #38bdf8;
+      background: rgba(56, 189, 248, 0.06);
+    }
+    .info-box p { color: #cbd5e1; margin: 0; font-size: 0.88rem; }
+    .info-box--warn { border-left-color: #fbbf24; background: rgba(251, 191, 36, 0.06); }
+    .info-box--warn p { color: #fde68a; }
+
+    /* ===== Table ===== */
+    .data-table {
+      width: 100%;
+      margin: 16px 0;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+    .data-table th, .data-table td {
+      padding: 10px 14px;
+      border: 1px solid rgba(148, 163, 184, 0.12);
+      text-align: left;
+    }
+    .data-table th {
+      background: rgba(99, 102, 241, 0.1);
+      color: #a5b4fc;
+      font-weight: 600;
+    }
+    .data-table td { color: #94a3b8; }
+    .data-table code {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 0.8rem;
+      color: #38bdf8;
+      background: rgba(56, 189, 248, 0.08);
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
+
+    /* ===== Back to top ===== */
+    .back-top {
+      display: inline-block;
+      margin-top: 40px;
+      padding: 8px 16px;
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      border-radius: 8px;
+      font-size: 0.85rem;
+      color: #94a3b8;
+      transition: all 0.2s;
+    }
+    .back-top:hover {
+      border-color: rgba(56, 189, 248, 0.4);
+      color: #38bdf8;
+      text-decoration: none;
+    }
+
+    /* ===== Responsive ===== */
+    @media (max-width: 640px) {
+      .container { padding: 24px 16px 40px; }
+      .page-title { font-size: 1.5rem; }
+      .flow-node { max-width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-grid"></div>
+  <div class="container">
+
+    <!-- Breadcrumb -->
+    <nav class="breadcrumb">
+      <a href="../../index.html">🏠 Home</a> / <a href="../../index.html#module-vllm">vLLM</a> / <span>generate() 总体流程</span>
+    </nav>
+
+    <!-- Title -->
+    <h1 class="page-title">vLLM generate() 总体流程</h1>
+    <p class="page-meta">深入追踪 llm.generate() 从用户调用到输出返回的完整执行路径</p>
+
+    <!-- Section 1: Overview -->
+    <section class="section">
+      <h2 class="section-title"><span class="emoji">🎯</span>背景与动机</h2>
+      <p><code>llm.generate()</code> 是 vLLM 离线推理的核心入口。用户传入 prompts 和 sampling_params，vLLM 内部完成 tokenization → 请求注册 → 调度 → 模型执行 → 采样 → detokenize → 停止检查 → 输出排序，最终返回有序的 <code>RequestOutput</code> 列表。</p>
+      <p>理解这条完整链路，是深入学习 vLLM 调度器、KV Cache 管理、投机解码等高级特性的基础。</p>
+    </section>
+
+    <!-- Section 2: Usage -->
+    <section class="section">
+      <h2 class="section-title"><span class="emoji">💻</span>基本用法</h2>
+      <div class="code-block">
+<span class="keyword">from</span> vllm <span class="keyword">import</span> LLM, SamplingParams
+
+<span class="comment"># Initialize the engine</span>
+llm = LLM(model=<span class="string">"Qwen/Qwen2.5-7B-Instruct"</span>)
+
+<span class="comment"># Define sampling parameters</span>
+sampling_params = SamplingParams(temperature=<span class="string">0.8</span>, top_p=<span class="string">0.95</span>, max_tokens=<span class="string">256</span>)
+
+<span class="comment"># Generate</span>
+outputs = llm.<span class="func">generate</span>(
+    [<span class="string">"Explain vLLM in one sentence."</span>,
+     <span class="string">"What is PagedAttention?"</span>],
+    sampling_params
+)
+
+<span class="keyword">for</span> output <span class="keyword">in</span> outputs:
+    print(output.outputs[<span class="string">0</span>].text)
+      </div>
+    </section>
+
+    <!-- Section 3: Full Flow Diagram -->
+    <section class="section">
+      <h2 class="section-title"><span class="emoji">🗺️</span>全景流程图</h2>
+      <div class="flow-diagram">
+        <div class="flow-steps">
+
+          <div class="flow-node">
+            <span class="flow-node__step">STEP 1</span>
+            <div class="flow-node__title">llm.generate(prompts, sampling_params)</div>
+            <div class="flow-node__desc">用户入口，接收 prompts 列表和采样参数</div>
+          </div>
+          <div class="flow-arrow"></div>
+
+          <div class="flow-node">
+            <span class="flow-node__step">STEP 2</span>
+            <div class="flow-node__title">llm._run_completion()</div>
+            <div class="flow-node__desc">继承自 <span class="flow-node__code">OfflineInferenceMixin</span>，协调预处理和引擎运行</div>
+          </div>
+          <div class="flow-arrow"></div>
+
+          <div class="flow-node">
+            <span class="flow-node__step">STEP 3</span>
+            <div class="flow-node__title">_add_completion_requests()</div>
+            <div class="flow-node__desc">对每个 prompt 执行预处理 + tokenization，然后注册到 engine</div>
+            <div class="sub-flow">
+              <div class="sub-flow__item">→ _preprocess_cmpl_one(prompt) — 格式化 & tokenize</div>
+              <div class="sub-flow__item">→ _render_and_add_requests() — 调用 self._add_request()</div>
+            </div>
+          </div>
+          <div class="flow-arrow"></div>
+
+          <div class="flow-node">
+            <span class="flow-node__step">STEP 4</span>
+            <div class="flow-node__title">self._run_engine()</div>
+            <div class="flow-node__desc">循环执行 <span class="flow-node__code">llm_engine.step()</span> 直到所有请求完成</div>
+            <div class="sub-flow">
+              <div class="sub-flow__item">→ engine_core.get_output()</div>
+              <div class="sub-flow__item">&nbsp;&nbsp;→ engine_core.step_fn() — <strong>Schedule + Execute + Output</strong></div>
+              <div class="sub-flow__item">&nbsp;&nbsp;→ engine_core.post_step() — 更新 draft token ids</div>
+              <div class="sub-flow__item">→ output_processor.process_outputs()</div>
+              <div class="sub-flow__item">→ output_processor.update_scheduler_stats()</div>
+            </div>
+          </div>
+          <div class="flow-arrow"></div>
+
+          <div class="flow-node" style="border-color: rgba(56, 189, 248, 0.4); background: rgba(56, 189, 248, 0.06);">
+            <span class="flow-node__step" style="background: rgba(56, 189, 248, 0.2); color: #7dd3fc;">CORE</span>
+            <div class="flow-node__title">engine_core.step_fn() 核心三步</div>
+            <div class="sub-flow">
+              <div class="sub-flow__item">① scheduler.schedule() → scheduler_output</div>
+              <div class="sub-flow__item">② model_executor.execute_model(scheduler_output) → model_output</div>
+              <div class="sub-flow__item">③ scheduler.update_from_output(scheduler_output, model_output) → engine_core_outputs</div>
+            </div>
+          </div>
+          <div class="flow-arrow"></div>
+
+          <div class="flow-node">
+            <span class="flow-node__step">STEP 5</span>
+            <div class="flow-node__title">排序输出并返回</div>
+            <div class="flow-node__desc">按 request_id 排序，返回 <span class="flow-node__code">List[RequestOutput]</span></div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 4: Detailed Walkthrough -->
+    <section class="section">
+      <h2 class="section-title"><span class="emoji">🔍</span>逐步详解</h2>
+
+      <h3>Step 1-3: 请求预处理与注册</h3>
+      <p>用户调用 <code>llm.generate()</code> 后，内部通过 <code>OfflineInferenceMixin._add_completion_requests</code> 对每个 prompt 进行处理：</p>
+      <div class="code-block">
+<span class="keyword">return</span> self.<span class="func">_render_and_add_requests</span>(
+    prompts=(
+        self.<span class="func">_preprocess_cmpl_one</span>(
+            prompt,
+            tokenization_kwargs,
+            mm_processor_kwargs=mm_processor_kwargs,
+        )
+        <span class="keyword">for</span> prompt <span class="keyword">in</span> <span class="func">maybe_tqdm</span>(
+            seq_prompts,
+            use_tqdm=use_tqdm,
+            desc=<span class="string">"Rendering prompts"</span>,
+        )
+    ),
+    params=seq_params,
+    lora_requests=seq_lora_requests,
+    priorities=seq_priority,
+)
+      </div>
+      <div class="info-box">
+        <p><strong>关键点：</strong><code>_preprocess_cmpl_one</code> 负责将原始 prompt 格式化并 tokenize；<code>_render_and_add_requests</code> 将处理后的请求通过 <code>self._add_request</code> 注册到 LLM Engine 中。</p>
+      </div>
+
+      <h3>Step 4: Engine 主循环</h3>
+      <p><code>_run_engine()</code> 是一个 while 循环，持续调用 <code>llm_engine.step()</code> 直到所有请求完成：</p>
+      <div class="code-block">
+<span class="keyword">while</span> self.llm_engine.<span class="func">has_unfinished_requests</span>():
+    step_outputs = self.llm_engine.<span class="func">step</span>()
+    <span class="keyword">for</span> output <span class="keyword">in</span> step_outputs:
+        <span class="keyword">assert</span> isinstance(output, output_type)
+        <span class="keyword">if</span> output.finished:
+<span class="highlight-line">            outputs.append(output)</span>
+
+<span class="keyword">return</span> sorted(outputs, key=<span class="keyword">lambda</span> x: int(x.request_id))
+      </div>
+
+      <h3>engine_core.step_fn(): 调度 → 执行 → 更新</h3>
+      <p>这是每一步推理的核心，完成 "Schedule, Execute, and Make Output" 三件事：</p>
+      <div class="code-block">
+<span class="comment"># Schedule: decide which requests to run this step</span>
+scheduler_output = self.scheduler.<span class="func">schedule</span>()
+
+<span class="comment"># Execute: run model forward pass</span>
+future = self.model_executor.<span class="func">execute_model</span>(scheduler_output, non_block=<span class="keyword">True</span>)
+model_output = future.<span class="func">result</span>()
+
+<span class="comment"># Update: process model output, update scheduler state</span>
+engine_core_outputs = self.scheduler.<span class="func">update_from_output</span>(
+    scheduler_output, model_output
+)
+      </div>
+      <p>返回的 <code>EngineCoreOutputs</code> 包含每个请求的新 token、是否结束、scheduler 统计等信息。</p>
+
+      <h3>output_processor.process_outputs(): 后处理</h3>
+      <p>这一阶段承担三个关键职责：</p>
+      <ol>
+        <li><strong>Detokenize</strong> — 将 token ids 解码为文本</li>
+        <li><strong>Stop Check</strong> — 判断请求是否应该停止</li>
+        <li><strong>创建 RequestOutput</strong> — 封装最终输出对象</li>
+      </ol>
+
+      <h3>停止条件详解</h3>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>停止条件</th>
+            <th>检测位置</th>
+            <th>是否出现在输出中</th>
+            <th>说明</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>超出长度限制</td>
+            <td>Scheduler / Output Processor</td>
+            <td>—</td>
+            <td>达到 <code>max_tokens</code></td>
+          </tr>
+          <tr>
+            <td>EOS token</td>
+            <td>GPU Sampler</td>
+            <td>✅ 在 token_ids 中</td>
+            <td>采样阶段直接检测</td>
+          </tr>
+          <tr>
+            <td><code>stop_token_ids</code></td>
+            <td>GPU Sampler</td>
+            <td>✅ 在 token_ids 中</td>
+            <td>采样阶段直接判断</td>
+          </tr>
+          <tr>
+            <td><code>stop</code> (strings)</td>
+            <td>CPU Output Processor</td>
+            <td>❌ 被截断</td>
+            <td>需 detokenize 后做字符串匹配</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box info-box--warn">
+        <p>⚠️ <strong>注意区分：</strong><code>stop_token_ids</code> 在 GPU 采样阶段就能检测到（Sampler 直接判断）；而 <code>stop</code>（stop strings）必须在 CPU detokenize 之后才能检测到，需要拼出文本再做字符串匹配。这就是为什么 stop strings 的处理在 <code>output_processor.process_outputs()</code> 中完成。</p>
+      </div>
+    </section>
+
+    <!-- Section 5: Summary -->
+    <section class="section">
+      <h2 class="section-title"><span class="emoji">📝</span>总结</h2>
+      <p>整体流程可以概括为：</p>
+      <ol>
+        <li><strong>入口</strong>：<code>llm.generate()</code> → <code>_run_completion()</code></li>
+        <li><strong>预处理</strong>：格式化 + tokenize + 注册请求到 engine</li>
+        <li><strong>引擎循环</strong>：反复执行 <code>llm_engine.step()</code></li>
+        <li><strong>核心三步</strong>：Schedule → Execute → Update</li>
+        <li><strong>后处理</strong>：Detokenize + Stop Check + 封装 RequestOutput</li>
+        <li><strong>返回</strong>：按 request_id 排序输出</li>
+      </ol>
+      <div class="info-box">
+        <p><strong>关键边界：</strong>engine_core 负责调度和模型执行（GPU 侧），output_processor 负责 detokenize 和 stop 检查（CPU 侧）。stop_token_ids 在 GPU 检测，stop strings 在 CPU 检测。</p>
+      </div>
+    </section>
+
+    <!-- Back -->
+    <a href="../../index.html" class="back-top">← 返回首页</a>
+
+  </div>
+</body>
+</html>
