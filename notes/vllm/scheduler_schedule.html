@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>scheduler.schedule() 内部流程 - ieafei's Learning Hub</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+  <style>
+    /* ===== Reset & Base ===== */
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    html { font-size: 16px; scroll-behavior: smooth; }
+    body {
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: #0b0f1a;
+      color: #e2e8f0;
+      line-height: 1.7;
+      overflow-x: hidden;
+    }
+    a { color: #38bdf8; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ===== Background ===== */
+    .bg-grid {
+      position: fixed; inset: 0; z-index: 0;
+      background-image:
+        linear-gradient(rgba(56, 189, 248, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(56, 189, 248, 0.03) 1px, transparent 1px);
+      background-size: 60px 60px;
+      pointer-events: none;
+    }
+
+    /* ===== Layout ===== */
+    .container {
+      position: relative; z-index: 1;
+      max-width: 900px; margin: 0 auto;
+      padding: 40px 24px 60px;
+    }
+
+    /* ===== Breadcrumb ===== */
+    .breadcrumb {
+      margin-bottom: 32px;
+      font-size: 0.85rem;
+      color: #64748b;
+    }
+    .breadcrumb a { color: #94a3b8; }
+    .breadcrumb a:hover { color: #38bdf8; }
+
+    /* ===== Title ===== */
+    .page-title {
+      font-size: 2rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #38bdf8, #818cf8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 12px;
+    }
+    .page-meta {
+      font-size: 0.88rem;
+      color: #64748b;
+      margin-bottom: 40px;
+    }
+
+    /* ===== Sections ===== */
+    .section { margin-bottom: 48px; }
+    .section-title {
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: #f1f5f9;
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+    }
+    .section-title .emoji { margin-right: 8px; }
+
+    h3 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #cbd5e1;
+      margin: 24px 0 12px;
+    }
+
+    p { margin-bottom: 14px; color: #94a3b8; }
+    ul, ol { margin: 0 0 14px 20px; color: #94a3b8; }
+    li { margin-bottom: 6px; }
+
+    /* ===== Code Block ===== */
+    .code-block {
+      position: relative;
+      margin: 16px 0 20px;
+      padding: 18px 20px;
+      border-radius: 10px;
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid rgba(148, 163, 184, 0.15);
+      overflow-x: auto;
+      white-space: pre;
+      font-family: "JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace;
+      font-size: 0.82rem;
+      line-height: 1.7;
+      color: #e2e8f0;
+    }
+    .code-block .comment { color: #64748b; }
+    .code-block .keyword { color: #c084fc; }
+    .code-block .func { color: #38bdf8; }
+    .code-block .string { color: #4ade80; }
+    .code-block .number { color: #fb923c; }
+    .code-block .highlight-line {
+      display: block;
+      background: rgba(56, 189, 248, 0.08);
+      margin: 0 -20px;
+      padding: 0 20px;
+      border-left: 3px solid #38bdf8;
+    }
+
+    /* ===== Flow Diagram ===== */
+    .flow-diagram {
+      margin: 24px 0;
+      padding: 32px 24px;
+      border-radius: 12px;
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid rgba(148, 163, 184, 0.12);
+      overflow-x: auto;
+    }
+    .flow-steps {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0;
+    }
+    .flow-node {
+      position: relative;
+      width: 100%;
+      max-width: 640px;
+      padding: 16px 20px;
+      border-radius: 10px;
+      border: 1px solid rgba(99, 102, 241, 0.3);
+      background: rgba(99, 102, 241, 0.06);
+      text-align: left;
+    }
+    .flow-node--cyan {
+      border-color: rgba(56, 189, 248, 0.4);
+      background: rgba(56, 189, 248, 0.06);
+    }
+    .flow-node--amber {
+      border-color: rgba(251, 191, 36, 0.35);
+      background: rgba(251, 191, 36, 0.05);
+    }
+    .flow-node__step {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.7rem;
+      font-weight: 700;
+      background: rgba(99, 102, 241, 0.2);
+      color: #a5b4fc;
+      margin-bottom: 6px;
+    }
+    .flow-node__step--cyan {
+      background: rgba(56, 189, 248, 0.2);
+      color: #7dd3fc;
+    }
+    .flow-node__step--amber {
+      background: rgba(251, 191, 36, 0.2);
+      color: #fde68a;
+    }
+    .flow-node__title {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: #f1f5f9;
+      margin-bottom: 4px;
+    }
+    .flow-node__desc {
+      font-size: 0.82rem;
+      color: #94a3b8;
+      margin: 0;
+    }
+    .flow-node__code {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 0.78rem;
+      color: #38bdf8;
+    }
+    .flow-arrow {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 4px 0;
+      color: #475569;
+      font-size: 1.2rem;
+    }
+    .flow-arrow::after { content: "↓"; }
+
+    /* ===== Sub-flow (nested) ===== */
+    .sub-flow {
+      margin: 12px 0 0 20px;
+      padding: 12px 16px;
+      border-left: 2px solid rgba(56, 189, 248, 0.3);
+      background: rgba(56, 189, 248, 0.03);
+      border-radius: 0 8px 8px 0;
+    }
+    .sub-flow__item {
+      font-size: 0.82rem;
+      color: #94a3b8;
+      padding: 4px 0;
+      font-family: "JetBrains Mono", monospace;
+    }
+    .sub-flow__item + .sub-flow__item {
+      border-top: 1px solid rgba(148, 163, 184, 0.08);
+    }
+
+    /* ===== Info Box ===== */
+    .info-box {
+      margin: 16px 0;
+      padding: 14px 18px;
+      border-radius: 8px;
+      border-left: 4px solid #38bdf8;
+      background: rgba(56, 189, 248, 0.06);
+    }
+    .info-box p { color: #cbd5e1; margin: 0; font-size: 0.88rem; }
+    .info-box--warn { border-left-color: #fbbf24; background: rgba(251, 191, 36, 0.06); }
+    .info-box--warn p { color: #fde68a; }
+    .info-box--green { border-left-color: #4ade80; background: rgba(74, 222, 128, 0.06); }
+    .info-box--green p { color: #bbf7d0; }
+
+    /* ===== Table ===== */
+    .data-table {
+      width: 100%;
+      margin: 16px 0;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+    .data-table th, .data-table td {
+      padding: 10px 14px;
+      border: 1px solid rgba(148, 163, 184, 0.12);
+      text-align: left;
+    }
+    .data-table th {
+      background: rgba(99, 102, 241, 0.1);
+      color: #a5b4fc;
+      font-weight: 600;
+    }
+    .data-table td { color: #94a3b8; }
+    .data-table code {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 0.8rem;
+      color: #38bdf8;
+      background: rgba(56, 189, 248, 0.08);
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
+
+    /* ===== Formula Box ===== */
+    .formula-box {
+      margin: 16px 0;
+      padding: 16px 20px;
+      border-radius: 10px;
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid rgba(99, 102, 241, 0.25);
+      font-family: "JetBrains Mono", monospace;
+      font-size: 0.85rem;
+      color: #e2e8f0;
+    }
+    .formula-box .label {
+      font-size: 0.75rem;
+      color: #64748b;
+      margin-bottom: 8px;
+      font-family: sans-serif;
+    }
+    .formula-box .eq { color: #a5b4fc; }
+    .formula-box .var { color: #38bdf8; }
+    .formula-box .op { color: #94a3b8; }
+    .formula-box .result { color: #4ade80; font-weight: 600; }
+
+    /* ===== Back to top ===== */
+    .back-top {
+      display: inline-block;
+      margin-top: 40px;
+      padding: 8px 16px;
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      border-radius: 8px;
+      font-size: 0.85rem;
+      color: #94a3b8;
+      transition: all 0.2s;
+    }
+    .back-top:hover {
+      border-color: rgba(56, 189, 248, 0.4);
+      color: #38bdf8;
+      text-decoration: none;
+    }
+
+    /* ===== Responsive ===== */
+    @media (max-width: 640px) {
+      .container { padding: 24px 16px 40px; }
+      .page-title { font-size: 1.5rem; }
+      .flow-node { max-width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-grid"></div>
+  <div class="container">
+
+    <!-- Breadcrumb -->
+    <nav class="breadcrumb">
+      <a href="../../index.html">🏠 Home</a> / <a href="index.html">⚡ vLLM</a> / <span>scheduler.schedule() 内部流程</span>
+    </nav>
+
+    <!-- Title -->
+    <h1 class="page-title">scheduler.schedule() 内部流程</h1>
+    <p class="page-meta">深入解析调度器如何为每一步推理分配 token 预算，追踪从接口定义到 running request 处理的完整逻辑</p>
+
+    <!-- Section 1: Overview -->
+    <section class="section">
+      <h2 class="section-title"><span class="emoji">🎯</span>背景与职责</h2>
+      <p><code>scheduler.schedule()</code> 是 <code>engine_core.step_fn()</code> 三步核心中的第一步，负责决定本轮推理中每个请求需要处理多少个 token。</p>
+      <p>其来源是 <code>sched/interface.py</code> 中定义的抽象接口 <code>schedule()</code>，由子类 <code>Scheduler</code> 具体实现。</p>
+      <div class="info-box">
+        <p><strong>核心输出：</strong>一个 <code>request_id → num_tokens</code> 的映射，即每个请求本轮需要处理的 token 数量。</p>
+      </div>
+
+      <h3>不同请求类型的 num_tokens</h3>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>请求类型</th>
+            <th>num_tokens 值</th>
+            <th>说明</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>新请求（prefill）</td>
+            <td><code>len(prompt_token_ids)</code></td>
+            <td>首次进入，需要处理完整 prompt</td>
+          </tr>
+          <tr>
+            <td>自回归生成（decode）</td>
+            <td><code>1</code></td>
+            <td>每步只生成 1 个新 token</td>
+          </tr>
+          <tr>
+            <td>投机解码 / Chunked Prefill / Prefix Cache</td>
+            <td><code>(1, len(prompt))</code> 之间</td>
+            <td>根据策略动态决定，可能是 1 到完整 prompt 长度之间的任意值</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>请求的核心属性</h3>
+      <p>每个请求在调度器视角下只关注两个关键属性：</p>
+      <div class="formula-box">
+        <div class="label">Request 核心属性</div>
+<span class="var">num_computed_tokens</span>      <span class="op"># 已完成计算的 token 数量（已经过 forward pass）</span>
+<span class="var">num_tokens_with_spec</span>      <span class="op"># 包含 spec token 在内的总 token 数量</span>
+                              <span class="op"># = len(prompt_token_ids) + len(output_token_ids) + len(spec_token_ids)</span>
+      </div>
+      <div class="info-box">
+        <p><strong>调度目标：</strong>每个调度步中，调度器都会尝试为各请求分配 token，使 <code>num_computed_tokens</code> 能够追赶上 <code>num_tokens_with_spec</code>。</p>
+      </div>
+    </section>
+
+    <!-- Section 2: Flow Diagram -->
+    <section class="section">
+      <h2 class="section-title"><span class="emoji">🗺️</span>调度流程图（Running Request 处理）</h2>
+      <div class="flow-diagram">
+        <div class="flow-steps">
+
+          <div class="flow-node flow-node--cyan">
+            <span class="flow-node__step flow-node__step--cyan">ENTRY</span>
+            <div class="flow-node__title">scheduler.schedule()</div>
+            <div class="flow-node__desc">遍历所有 running requests，为每个请求计算本轮应处理的 token 数</div>
+          </div>
+          <div class="flow-arrow"></div>
+
+          <div class="flow-node">
+            <span class="flow-node__step">CHECK A</span>
+            <div class="flow-node__title">是否已达到 token 上限？</div>
+            <div class="flow-node__desc">判断请求是否已经不需要再生成 token（最差情况估算）</div>
+            <div class="sub-flow">
+              <div class="sub-flow__item">条件：num_computed_tokens + 2 - num_output_placeholders</div>
+              <div class="sub-flow__item">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;>= num_prompt_tokens + max_tokens</div>
+              <div class="sub-flow__item">→ 满足则 continue（跳过本请求）</div>
+            </div>
+          </div>
+          <div class="flow-arrow"></div>
+
+          <div class="flow-node">
+            <span class="flow-node__step">CALC B</span>
+            <div class="flow-node__title">计算 num_new_tokens（初始值）</div>
+            <div class="flow-node__desc">本轮需要处理的 token 数 = 目标总量 - 已计算量</div>
+            <div class="sub-flow">
+              <div class="sub-flow__item">num_new_tokens = num_tokens_with_spec + num_output_placeholders - num_computed_tokens</div>
+            </div>
+          </div>
+          <div class="flow-arrow"></div>
+
+          <div class="flow-node">
+            <span class="flow-node__step">CONSTRAINT 1</span>
+            <div class="flow-node__title">约束1：long_prefill_token_threshold</div>
+            <div class="flow-node__desc">单步 prefill 不能超过配置的最长 token 阈值</div>
+            <div class="sub-flow">
+              <div class="sub-flow__item">if 0 &lt; long_prefill_token_threshold &lt; num_new_tokens:</div>
+              <div class="sub-flow__item">&nbsp;&nbsp;&nbsp;&nbsp;num_new_tokens = long_prefill_token_threshold</div>
+            </div>
+          </div>
+          <div class="flow-arrow"></div>
+
+          <div class="flow-node">
+            <span class="flow-node__step">CONSTRAINT 2</span>
+            <div class="flow-node__title">约束2：token_budget（全局预算）</div>
+            <div class="flow-node__desc">本步所有请求合计不能超过 token 总预算，分配后扣减预算</div>
+            <div class="sub-flow">
+              <div class="sub-flow__item">num_new_tokens = min(num_new_tokens, token_budget)</div>
+              <div class="sub-flow__item">token_budget -= num_new_tokens</div>
+            </div>
+          </div>
+          <div class="flow-arrow"></div>
+
+          <div class="flow-node">
+            <span class="flow-node__step">CONSTRAINT 3</span>
+            <div class="flow-node__title">约束3：max_model_len（模型最大长度）</div>
+            <div class="flow-node__desc">防止 spec decoding 一次追加多个 draft token 时冲出模型长度边界</div>
+            <div class="sub-flow">
+              <div class="sub-flow__item">num_new_tokens = min(num_new_tokens, max_model_len - 1 - num_computed_tokens)</div>
+            </div>
+          </div>
+          <div class="flow-arrow"></div>
+
+          <div class="flow-node flow-node--amber">
+            <span class="flow-node__step flow-node__step--amber">GATE</span>
+            <div class="flow-node__title">num_new_tokens == 0？</div>
+            <div class="flow-node__desc">经过三重约束后若仍为 0，则跳过本请求；否则进入 KV Cache 分配</div>
+            <div class="sub-flow">
+              <div class="sub-flow__item">if num_new_tokens == 0: continue</div>
+              <div class="sub-flow__item">else: 为该请求分配 KV Cache blocks</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 3: Detailed Walkthrough -->
+    <section class="section">
+      <h2 class="section-title"><span class="emoji">🔍</span>逐步详解</h2>
+
+      <h3>CHECK A：token 上限判断</h3>
+      <p>调度器在为请求分配 token 之前，首先判断该请求是否已经达到生成上限，无需再参与本轮调度：</p>
+      <div class="code-block">
+<span class="keyword">if</span> (request.num_computed_tokens + <span class="number">2</span> - request.num_output_placeholders
+        >= request.num_prompt_tokens + request.max_tokens):
+    <span class="keyword">continue</span>
+      </div>
+
+      <p>这里的 <code>+2 - num_output_placeholders</code> 是一个"最差情况估算"，理解它需要区分两种调度模式：</p>
+
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>调度模式</th>
+            <th>num_output_placeholders 含义</th>
+            <th>说明</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>同步调度</td>
+            <td><code>0</code></td>
+            <td>上一步 forward 已完成，token 已追加到 output_token_ids，scheduler 看到真实数量</td>
+          </tr>
+          <tr>
+            <td>异步调度</td>
+            <td><code>&gt; 0</code></td>
+            <td>上一步 forward 还未完成，用 num_output_placeholders 表示"飞行中、即将产生但尚未到达"的 token 数</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box">
+        <p><strong>公式推导：</strong><code>num_computed_tokens + 2 - num_output_placeholders</code> 等价于 <code>(num_computed_tokens + 1) - (num_output_placeholders - 1)</code></p>
+      </div>
+
+      <div class="formula-box">
+        <div class="label">最差情况推导（spec decoding 全部拒绝时）</div>
+<span class="var">num_computed_tokens</span> <span class="op">+</span> <span class="number">1</span>
+    <span class="op"># 前一步 forward 完成时，至少产生 1 个真实 sampled token</span>
+    <span class="op"># 即使所有 draft token 都被拒绝，主模型自己还是会采样出 1 个 token</span>
+
+<span class="op">-</span> (<span class="var">num_output_placeholders</span> <span class="op">-</span> <span class="number">1</span>)
+    <span class="op"># num_output_placeholders 中最多有 (num_output_placeholders - 1) 个是 draft token</span>
+    <span class="op"># 剩余 1 个是必然产生的 sampled token</span>
+
+<span class="op">= </span><span class="result">num_computed_tokens + 2 - num_output_placeholders</span>
+      </div>
+
+      <h3>CALC B：num_new_tokens 初始计算</h3>
+      <p>通过上限检查后，计算本轮需要处理的 token 数量：</p>
+      <div class="code-block">
+num_new_tokens = (
+    request.num_tokens_with_spec
+    + request.num_output_placeholders
+    - request.num_computed_tokens
+)
+      </div>
+      <p>直觉上：<strong>目标总量（含飞行中的 placeholder）减去已完成量</strong>，就是本轮还需要处理的量。</p>
+
+      <h3>三重约束详解</h3>
+
+      <p><strong>约束1 — long_prefill_token_threshold：</strong>限制单步 prefill 的最大 token 数，防止一个超长 prompt 独占整个调度步的计算资源。</p>
+      <div class="code-block">
+<span class="keyword">if</span> <span class="number">0</span> &lt; self.scheduler_config.long_prefill_token_threshold &lt; num_new_tokens:
+    num_new_tokens = self.scheduler_config.long_prefill_token_threshold
+      </div>
+
+      <p><strong>约束2 — token_budget：</strong>全局 token 预算，控制本调度步中所有请求合计处理的 token 总量上限。每分配一个请求后立即扣减，保证总量不超标。</p>
+      <div class="code-block">
+num_new_tokens = <span class="func">min</span>(num_new_tokens, token_budget)
+token_budget -= num_new_tokens
+      </div>
+
+      <p><strong>约束3 — max_model_len：</strong>防止 spec decoding 场景下一次性追加多个 draft token 时超出模型最大序列长度。</p>
+      <div class="code-block">
+num_new_tokens = <span class="func">min</span>(
+    num_new_tokens,
+    self.max_model_len - <span class="number">1</span> - request.num_computed_tokens
+)
+      </div>
+      <div class="info-box info-box--warn">
+        <p>⚠️ <strong>为什么 spec decoding 特别需要约束3？</strong>普通自回归每步只生成 1 个 token，不会越界；但 spec decoding 一次性追加 N 个草稿 token（N 通常为 3~5），在接近 <code>max_model_len</code> 边界时，这 N 个 token 很容易一下子"冲出"边界，必须截断。</p>
+      </div>
+
+      <h3>GATE：num_new_tokens == 0 的处理</h3>
+      <p>经过三重约束后，若 <code>num_new_tokens</code> 降为 0（通常是 token_budget 耗尽），则跳过该请求，不为其分配 KV Cache blocks：</p>
+      <div class="code-block">
+<span class="keyword">if</span> num_new_tokens == <span class="number">0</span>:
+    <span class="keyword">continue</span>
+
+<span class="comment"># 否则：为该请求分配 KV Cache blocks</span>
+<span class="comment"># （KV Cache 分配逻辑待补充）</span>
+      </div>
+    </section>
+
+    <!-- Section 4: Summary -->
+    <section class="section">
+      <h2 class="section-title"><span class="emoji">📝</span>总结</h2>
+      <p>对每个 running request，<code>schedule()</code> 的处理逻辑可以概括为：</p>
+      <ol>
+        <li><strong>上限检查</strong>：用最差情况估算判断请求是否已完成，跳过无需调度的请求</li>
+        <li><strong>初始计算</strong>：<code>num_new_tokens = num_tokens_with_spec + num_output_placeholders - num_computed_tokens</code></li>
+        <li><strong>三重约束</strong>：依次限制单步 prefill 长度、全局 token 预算、模型最大长度</li>
+        <li><strong>零值过滤</strong>：约束后为 0 则跳过，否则进入 KV Cache 分配</li>
+      </ol>
+      <div class="info-box info-box--green">
+        <p>✅ <strong>关键边界：</strong><code>num_output_placeholders</code> 是异步调度的核心概念，代表"飞行中"的 token；<code>num_tokens_with_spec</code> 包含了 spec decoding 的草稿 token，是调度目标的上界。</p>
+      </div>
+    </section>
+
+    <!-- Back -->
+    <a href="index.html" class="back-top">← 返回 vLLM 模块</a>
+
+  </div>
+</body>
+</html>

@@ -424,6 +424,25 @@ engine_core_outputs = self.scheduler.<span class="func">update_from_output</span
       </div>
       <p>返回的 <code>EngineCoreOutputs</code> 包含每个请求的新 token、是否结束、scheduler 统计等信息。</p>
 
+      <div class="info-box">
+        <p><strong>model_executor 层级结构：</strong><code>model_executor</code> 在初始化时会实例化 Worker，Worker 再实例化 ModelRunner，形成三层结构：</p>
+      </div>
+      <div class="code-block">
+<span class="comment"># Executor 层（vllm/v1/executor/）</span>
+<span class="comment">#   multiproc_executor  — 多进程并行（本地多 GPU）</span>
+<span class="comment">#   ray_executor_v2     — Ray 分布式执行</span>
+<span class="comment">#   uniproc_executor    — 单进程执行（调试/单 GPU）</span>
+
+<span class="comment"># Worker 层（vllm/v1/worker/）</span>
+<span class="comment">#   cpu_worker / gpu_worker / tpu_worker / xpu_worker</span>
+
+<span class="comment"># ModelRunner 层（vllm/v1/worker/）</span>
+<span class="comment">#   gpu_model_runner.py（v2 迁移中：vllm/v1/worker/gpu/model_runner.py）</span>
+      </div>
+
+      <h3>engine_core.post_step(): 投机解码状态更新</h3>
+      <p><code>post_step()</code> 在 <code>step_fn()</code> 执行完毕后调用，负责将本轮推理产生的 draft token ids 同步回 scheduler，为下一轮投机解码（Speculative Decoding）做准备。</p>
+
       <h3>output_processor.process_outputs(): 后处理</h3>
       <p>这一阶段承担三个关键职责：</p>
       <ol>

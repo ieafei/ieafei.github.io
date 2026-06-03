@@ -33,7 +33,7 @@
           <h2 class="category__title">流程梳理</h2>
           <p class="category__desc">端到端的代码执行路径追踪，理解请求从入口到输出的完整链路</p>
         </div>
-        <span class="category__count">1 note</span>
+        <span class="category__count">2 notes</span>
       </div>
       <div class="note-list">
         <a href="vllm_generate_flow.html" class="note-card">
@@ -41,6 +41,14 @@
           <div class="note-card__body">
             <h4 class="note-card__title">generate() 总体流程</h4>
             <p class="note-card__desc">追踪 llm.generate() 从用户调用到输出返回的完整执行路径：tokenization → 请求注册 → 调度 → 模型执行 → 采样 → detokenize → 停止检查 → 输出排序</p>
+          </div>
+          <span class="note-card__arrow">→</span>
+        </a>
+        <a href="scheduler_schedule.html" class="note-card">
+          <span class="note-card__icon">📄</span>
+          <div class="note-card__body">
+            <h4 class="note-card__title">scheduler.schedule() 内部流程</h4>
+            <p class="note-card__desc">深入解析调度器如何为每一步推理分配 token 预算：上限检查、num_new_tokens 计算、三重约束（prefill 阈值 / token_budget / max_model_len）、KV Cache 分配</p>
           </div>
           <span class="note-card__arrow">→</span>
         </a>

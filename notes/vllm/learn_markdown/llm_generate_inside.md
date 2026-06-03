@@ -32,6 +32,11 @@ return self._render_and_add_requests(
         output_processor.update_scheduler_stats()
 '''
 engine_core.step_fn()执行了重要流程(Schedule, execute, and make output)
+其中model_executor中实例化worker
+(vllm/v1/executor中的multiproc_executor，ray_executor_v2，uniproc_executor)
+(vllm/v1/worker中的cpu、gpu、tpu、xpu worker)
+ worker实例化model runner
+(vllm/v1/woker/xxx_model_runner，vllm仓库正在完成v2 model runner的迁移，目录vllm/v1/worker/gpu/model_runner.py)
 '''
     scheduler_output = self.scheduler.schedule()
     future = self.model_executor.execute_model(scheduler_output, non_block=True)
