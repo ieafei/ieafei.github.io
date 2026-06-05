@@ -342,7 +342,7 @@
 
     <!-- Breadcrumb -->
     <nav class="breadcrumb">
-      <a href="../../index.html">🏠 Home</a> / <a href="index.html">⚡ vLLM</a> / <span>Speculative Decoding 应用解析</span>
+<a href="../../../index.html">🏠 Home</a> / <a href="../index.html">⚡ vLLM</a> / <span>Speculative Decoding 应用解析</span>
     </nav>
 
     <!-- Title -->
@@ -433,6 +433,30 @@
         <p><strong>输出：</strong>K 个 draft token <code>d₁…dₖ</code>，以及 draft model 在每个位置的概率分布 <code>q(x)</code>（用于后续拒绝采样）。</p>
       </div>
 
+      <h3>源码实现：draft_tokens()</h3>
+      <div class="code-block"><span class="kw">def</span> <span class="fn">draft_tokens</span>(draft_model, input_ids, K=<span class="num">5</span>, temperature=<span class="num">1.0</span>):
+    draft_ids = []
+    draft_probs = []
+    current_input = input_ids.<span class="fn">clone</span>()
+
+    <span class="kw">with</span> torch.no_grad():
+        <span class="kw">for</span> _ <span class="kw">in</span> <span class="fn">range</span>(K):
+            outputs = <span class="fn">draft_model</span>(current_input)
+            next_token_logits = outputs.logits[:, <span class="num">-1</span>, :]
+
+            probs = torch.<span class="fn">softmax</span>(next_token_logits / temperature, dim=<span class="num">-1</span>)
+            next_token = torch.<span class="fn">multinomial</span>(probs, num_samples=<span class="num">1</span>)
+
+            draft_ids.<span class="fn">append</span>(next_token)
+            token_prob = probs.<span class="fn">gather</span>(<span class="num">-1</span>, next_token)   <span class="cmt"># q(x, dt)：draft model 对该 token 的概率</span>
+            draft_probs.<span class="fn">append</span>(token_prob)
+
+            current_input = torch.<span class="fn">cat</span>([current_input, next_token], dim=<span class="num">-1</span>)
+
+    draft_ids   = torch.<span class="fn">cat</span>(draft_ids,   dim=<span class="num">-1</span>)   <span class="cmt"># [1, K]</span>
+    draft_probs = torch.<span class="fn">cat</span>(draft_probs, dim=<span class="num">-1</span>)   <span class="cmt"># [1, K]</span>
+    <span class="kw">return</span> draft_ids, draft_probs</div>
+
       <table class="data-table">
         <thead>
           <tr><th>参数</th><th>典型值</th><th>说明</th></tr>
@@ -470,6 +494,24 @@
       <div class="info-box info-box--green">
         <p>✅ <strong>加速来源：</strong>原本需要 K 次 forward（自回归），现在只需 1 次 forward（并行验证），节省了 K-1 次大模型推理开销。</p>
       </div>
+
+      <h3>源码实现：verify_tokens()</h3>
+      <div class="code-block"><span class="kw">def</span> <span class="fn">verify_tokens</span>(target_model, input_ids, draft_ids, temperature=<span class="num">1.0</span>):
+    <span class="cmt"># 拼接 prompt + draft tokens，一次 forward 获取所有位置的概率分布</span>
+    full_sequence = torch.<span class="fn">cat</span>([input_ids, draft_ids], dim=<span class="num">-1</span>)
+
+    <span class="kw">with</span> torch.no_grad():
+        outputs = <span class="fn">target_model</span>(full_sequence)
+        logits = outputs.logits
+
+    <span class="cmt"># 取出 draft token 对应的 K+1 个位置的 logits</span>
+    <span class="cmt"># position i 预测 token i+1，所以从 N-1 开始取 K+1 个</span>
+    K = draft_ids.shape[<span class="num">-1</span>]
+    start_pos = input_ids.shape[<span class="num">-1</span>] - <span class="num">1</span>
+    target_logits = logits[:, start_pos:start_pos + K + <span class="num">1</span>, :]
+    target_probs  = torch.<span class="fn">softmax</span>(target_logits / temperature, dim=<span class="num">-1</span>)
+
+    <span class="kw">return</span> target_probs   <span class="cmt"># [1, K+1, vocab_size]，p(x) 分布</span></div>
 
       <p>Target model 输出每个位置的概率分布 <code>p(x)</code>，其中 <code>p(x, dₓ)</code> 表示 target model 在位置 x 对 draft token <code>dₓ</code> 赋予的概率。</p>
     </section>
@@ -552,6 +594,47 @@ correction = torch.<span class="fn">multinomial</span>(residual, num_samples=<sp
       <p style="font-size:0.82rem;color:#64748b;">p &lt; q → Case 2，以概率 0.25/0.55 ≈ 0.45 接受。若被拒绝，从 clamp(p - q, 0) 归一化后重采样，得到 target model 更偏好的 token（如 "bright"）。</p>
     </section>
 
+    <!-- ===== Section 5.5: acceptance_sampling 源码 ===== -->
+    <section class="section">
+      <h2 class="section-title"><span class="emoji">💻</span>源码实现：acceptance_sampling()</h2>
+      <p>完整的拒绝采样函数，接收 draft_ids、draft_probs、target_probs，逐位执行 Case 1 / Case 2 决策：</p>
+      <div class="code-block"><span class="kw">def</span> <span class="fn">acceptance_sampling</span>(draft_ids, draft_probs, target_probs, device):
+    <span class="cmt">"""
+    Args:
+        draft_ids:    [1, K]           — draft model 生成的 token ids
+        draft_probs:  [1, K]           — draft model 对每个 token 的概率 q(x, dt)
+        target_probs: [1, K+1, vocab]  — target model 在 K+1 个位置的完整分布 p(x)
+    Returns:
+        accepted_ids: Tensor of accepted token IDs
+        n_accepted:   Number of tokens accepted (excluding bonus)
+    """</span>
+    K = draft_ids.shape[<span class="num">-1</span>]
+    accepted_ids = []
+
+    <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(K):
+        dt = draft_ids[<span class="num">0</span>, i]                          <span class="cmt"># 当前 draft token</span>
+        q  = draft_probs[<span class="num">0</span>, i]                         <span class="cmt"># q(x, dt)</span>
+        p  = target_probs[<span class="num">0</span>, i, dt]                    <span class="cmt"># p(x, dt)</span>
+
+        <span class="kw">if</span> p >= q:                                      <span class="cmt"># Case 1：直接接受</span>
+            accepted_ids.<span class="fn">append</span>(dt)
+        <span class="kw">else</span>:                                           <span class="cmt"># Case 2：概率接受</span>
+            r = torch.<span class="fn">rand</span>(<span class="num">1</span>).to(device)
+            <span class="kw">if</span> r < p / q:                               <span class="cmt"># Case 2.1：accept</span>
+                accepted_ids.<span class="fn">append</span>(dt)
+            <span class="kw">else</span>:                                       <span class="cmt"># Case 2.2：reject，从残差分布重采样</span>
+                p_dist = target_probs[<span class="num">0</span>, i]              <span class="cmt"># p(x) 完整分布</span>
+                q_dist = torch.<span class="fn">zeros_like</span>(p_dist)
+                q_dist[dt] = q
+                residual   = torch.<span class="fn">clamp</span>(p_dist - q_dist, min=<span class="num">0</span>)
+                correction = torch.<span class="fn">multinomial</span>(residual, num_samples=<span class="num">1</span>)
+                accepted_ids.<span class="fn">append</span>(correction)
+                <span class="kw">break</span>                                   <span class="cmt"># 后续 draft token 全部丢弃</span>
+
+    n_accepted = <span class="fn">len</span>(accepted_ids)
+    <span class="kw">return</span> torch.<span class="fn">tensor</span>(accepted_ids), n_accepted</div>
+    </section>
+
     <!-- ===== Section 6: 具体示例 ===== -->
     <section class="section">
       <h2 class="section-title"><span class="emoji">📐</span>完整示例走查</h2>
@@ -617,6 +700,46 @@ correction = torch.<span class="fn">multinomial</span>(residual, num_samples=<sp
       </div>
     </section>
 
+    <!-- ===== Section 6.5: 实际运行结果 ===== -->
+    <section class="section">
+      <h2 class="section-title"><span class="emoji">📊</span>实际运行结果对比</h2>
+      <p>以下是使用 <code>gpt2</code>（124M）作为 draft model、<code>gpt2-medium</code>（345M）作为 target model，在相同 prompt 下的实测对比：</p>
+      <div class="code-block"><span class="cmt">Draft model:  gpt2        — 124,439,808 parameters</span>
+<span class="cmt">Target model: gpt2-medium — 354,823,168 parameters  (Ratio: 2.9x)</span>
+<span class="cmt">Prompt: The future of artificial intelligence will</span>
+
+<span class="cmt">============================================================</span>
+<span class="cmt">STANDARD DECODING (target model only)</span>
+Time:        <span class="num">0.61</span>s
+Tokens/sec:  <span class="num">32.9</span>
+Output: The future of artificial intelligence will be determined by this type
+        of research, and AI researchers should know how to design systems so
+        that they...
+
+<span class="cmt">============================================================</span>
+<span class="cmt">SPECULATIVE DECODING — 逐步 draft 日志</span>
+Drafted <span class="num">5</span> tokens, accepted <span class="num">5</span> (+bonus = <span class="num">6</span>) tokens.  Total generated:  <span class="num">6</span>/20
+Drafted <span class="num">5</span> tokens, accepted <span class="num">5</span> (+bonus = <span class="num">6</span>) tokens.  Total generated: <span class="num">12</span>/20
+Drafted <span class="num">5</span> tokens, accepted <span class="num">2</span> (+bonus = <span class="num">2</span>) tokens.  Total generated: <span class="num">14</span>/20
+Drafted <span class="num">5</span> tokens, accepted <span class="num">4</span> (+bonus = <span class="num">4</span>) tokens.  Total generated: <span class="num">18</span>/20
+Drafted <span class="num">5</span> tokens, accepted <span class="num">2</span> (+bonus = <span class="num">2</span>) tokens.  Total generated: <span class="num">20</span>/20
+
+<span class="cmt">SPECULATIVE DECODING (draft + target)</span>
+Time:            <span class="num">0.36</span>s
+Tokens/sec:      <span class="num">55.4</span>
+Acceptance rate: <span class="num">80.0</span>%
+Speedup:         <span class="num">1.69</span>x
+Output: The future of artificial intelligence will also involve the creation
+        of tools that can analyze many the world's audio or video data for
+        speech patterns...</div>
+      <div class="info-box info-box--green">
+        <p>✅ 接受率 80%，加速 <strong>1.69×</strong>（gpt2 与 gpt2-medium 架构相同但参数量差距仅 2.9x，加速比相对保守）。注意两种方式的输出文本不同——这正是前文提到的"实际结果不完全一致"现象：draft model 的存在改变了随机数序列，即使 Case 1/2 都可能 accept 与 target 不同的 token。</p>
+      </div>
+      <div class="info-box info-box--purple">
+        <p>💡 <strong>逐步日志解读：</strong>第 1、2 轮 5 个 draft token 全部被接受（+bonus 是 target model 在最后位置额外采样的 1 个 token）；第 3 轮只接受了 2 个，说明第 3 个 draft token 被拒绝，后续 2 个直接丢弃。</p>
+      </div>
+    </section>
+
     <!-- ===== Section 7: 提高接受率 ===== -->
     <section class="section">
       <h2 class="section-title"><span class="emoji">🚀</span>提高 Spec Decode 接受率的方法</h2>
@@ -674,7 +797,7 @@ correction = torch.<span class="fn">multinomial</span>(residual, num_samples=<sp
     </section>
 
     <!-- Back -->
-    <a href="index.html" class="back-top">← 返回 vLLM 模块</a>
+    <a href="../index.html" class="back-top">← 返回 vLLM 模块</a>
 
   </div>
 </body>
