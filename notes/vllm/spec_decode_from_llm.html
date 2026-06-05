@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>从 LLM 应用角度理解 Spec Decode - ieafei's Learning Hub</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    html { font-size: 16px; scroll-behavior: smooth; }
+    body {
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: #0b0f1a;
+      color: #e2e8f0;
+      line-height: 1.7;
+      overflow-x: hidden;
+    }
+    a { color: #38bdf8; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .bg-grid {
+      position: fixed; inset: 0; z-index: 0;
+      background-image:
+        linear-gradient(rgba(56, 189, 248, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(56, 189, 248, 0.03) 1px, transparent 1px);
+      background-size: 60px 60px;
+      pointer-events: none;
+    }
+
+    .container {
+      position: relative; z-index: 1;
+      max-width: 960px; margin: 0 auto;
+      padding: 40px 24px 60px;
+    }
+
+    .breadcrumb {
+      margin-bottom: 32px;
+      font-size: 0.85rem;
+      color: #64748b;
+    }
+    .breadcrumb a { color: #94a3b8; }
+    .breadcrumb a:hover { color: #38bdf8; }
+
+    .page-title {
+      font-size: 2rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #38bdf8, #818cf8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 12px;
+    }
+    .page-meta { font-size: 0.88rem; color: #64748b; margin-bottom: 40px; }
+
+    .section { margin-bottom: 52px; }
+    .section-title {
+      font-size: 1.4rem; font-weight: 700; color: #f1f5f9;
+      margin-bottom: 16px; padding-bottom: 8px;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+    }
+    .section-title .emoji { margin-right: 8px; }
+
+    h3 { font-size: 1.05rem; font-weight: 600; color: #cbd5e1; margin: 24px 0 10px; }
+    p { margin-bottom: 14px; color: #94a3b8; }
+    ul, ol { margin: 0 0 14px 20px; color: #94a3b8; }
+    li { margin-bottom: 6px; }
+
+    /* ===== Code Block ===== */
+    .code-block {
+      margin: 14px 0 20px;
+      padding: 16px 20px;
+      border-radius: 10px;
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid rgba(148, 163, 184, 0.15);
+      overflow-x: auto;
+      white-space: pre;
+      font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
+      font-size: 0.82rem;
+      line-height: 1.75;
+      color: #e2e8f0;
+    }
+    .kw  { color: #c084fc; }
+    .fn  { color: #38bdf8; }
+    .str { color: #4ade80; }
+    .num { color: #fb923c; }
+    .cmt { color: #64748b; }
+    .var { color: #fde68a; }
+
+    /* ===== Info / Warn / Green Box ===== */
+    .info-box {
+      margin: 14px 0;
+      padding: 13px 18px;
+      border-radius: 8px;
+      border-left: 4px solid #38bdf8;
+      background: rgba(56, 189, 248, 0.06);
+    }
+    .info-box p { color: #cbd5e1; margin: 0; font-size: 0.88rem; }
+    .info-box--warn { border-left-color: #fbbf24; background: rgba(251, 191, 36, 0.06); }
+    .info-box--warn p { color: #fde68a; }
+    .info-box--green { border-left-color: #4ade80; background: rgba(74, 222, 128, 0.06); }
+    .info-box--green p { color: #bbf7d0; }
+    .info-box--purple { border-left-color: #a78bfa; background: rgba(167, 139, 250, 0.06); }
+    .info-box--purple p { color: #ddd6fe; }
+
+    /* ===== Pipeline Diagram ===== */
+    .pipeline {
+      display: flex;
+      align-items: stretch;
+      gap: 0;
+      margin: 24px 0;
+      overflow-x: auto;
+    }
+    .pipe-stage {
+      flex: 1;
+      min-width: 160px;
+      padding: 18px 16px;
+      border-radius: 10px;
+      border: 1px solid rgba(99, 102, 241, 0.3);
+      background: rgba(99, 102, 241, 0.06);
+      text-align: center;
+      position: relative;
+    }
+    .pipe-stage--cyan  { border-color: rgba(56, 189, 248, 0.4);  background: rgba(56, 189, 248, 0.06); }
+    .pipe-stage--amber { border-color: rgba(251, 191, 36, 0.35); background: rgba(251, 191, 36, 0.05); }
+    .pipe-stage--green { border-color: rgba(74, 222, 128, 0.35); background: rgba(74, 222, 128, 0.05); }
+    .pipe-stage__num {
+      display: inline-block;
+      width: 24px; height: 24px; line-height: 24px;
+      border-radius: 50%;
+      font-size: 0.75rem; font-weight: 700;
+      background: rgba(99, 102, 241, 0.25); color: #a5b4fc;
+      margin-bottom: 8px;
+    }
+    .pipe-stage--cyan  .pipe-stage__num { background: rgba(56, 189, 248, 0.2);  color: #7dd3fc; }
+    .pipe-stage--amber .pipe-stage__num { background: rgba(251, 191, 36, 0.2);  color: #fde68a; }
+    .pipe-stage--green .pipe-stage__num { background: rgba(74, 222, 128, 0.2);  color: #86efac; }
+    .pipe-stage__title { font-size: 0.9rem; font-weight: 700; color: #f1f5f9; margin-bottom: 6px; }
+    .pipe-stage__desc  { font-size: 0.78rem; color: #94a3b8; }
+    .pipe-arrow {
+      display: flex; align-items: center; padding: 0 6px;
+      font-size: 1.4rem; color: #475569; flex-shrink: 0;
+    }
+
+    /* ===== Token Row Diagram ===== */
+    .token-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin: 14px 0;
+      flex-wrap: wrap;
+    }
+    .token {
+      display: inline-flex;
+      align-items: center; justify-content: center;
+      min-width: 44px; height: 36px;
+      padding: 0 8px;
+      border-radius: 6px;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 0.78rem;
+      font-weight: 600;
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      background: rgba(15, 23, 42, 0.8);
+      color: #94a3b8;
+    }
+    .token--prompt { border-color: rgba(56, 189, 248, 0.4); color: #7dd3fc; background: rgba(56, 189, 248, 0.08); }
+    .token--draft  { border-color: rgba(251, 191, 36, 0.4);  color: #fde68a; background: rgba(251, 191, 36, 0.08); }
+    .token--accept { border-color: rgba(74, 222, 128, 0.4);  color: #86efac; background: rgba(74, 222, 128, 0.08); }
+    .token--reject { border-color: rgba(248, 113, 113, 0.4); color: #fca5a5; background: rgba(248, 113, 113, 0.08); }
+    .token--correct{ border-color: rgba(167, 139, 250, 0.4); color: #c4b5fd; background: rgba(167, 139, 250, 0.08); }
+    .token-label { font-size: 0.72rem; color: #64748b; margin: 0 4px; }
+    .token-sep { color: #475569; font-size: 1.1rem; }
+
+    /* ===== Prob Matrix ===== */
+    .prob-matrix {
+      display: grid;
+      gap: 8px;
+      margin: 16px 0;
+    }
+    .prob-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .prob-label {
+      min-width: 80px;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 0.8rem;
+      color: #94a3b8;
+    }
+    .prob-bar-wrap {
+      flex: 1;
+      height: 28px;
+      background: rgba(15, 23, 42, 0.8);
+      border-radius: 6px;
+      border: 1px solid rgba(148, 163, 184, 0.12);
+      overflow: hidden;
+      position: relative;
+    }
+    .prob-bar {
+      height: 100%;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      padding-left: 8px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      font-family: "JetBrains Mono", monospace;
+      transition: width 0.3s;
+    }
+    .prob-bar--p { background: rgba(56, 189, 248, 0.3); color: #7dd3fc; }
+    .prob-bar--q { background: rgba(251, 191, 36, 0.3);  color: #fde68a; }
+
+    /* ===== Decision Tree ===== */
+    .decision-tree {
+      margin: 20px 0;
+      padding: 24px;
+      border-radius: 12px;
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid rgba(148, 163, 184, 0.12);
+    }
+    .dt-root {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0;
+    }
+    .dt-node {
+      width: 100%;
+      max-width: 560px;
+      padding: 12px 16px;
+      border-radius: 8px;
+      border: 1px solid rgba(99, 102, 241, 0.3);
+      background: rgba(99, 102, 241, 0.07);
+      text-align: center;
+      font-size: 0.88rem;
+      color: #e2e8f0;
+    }
+    .dt-node--cyan  { border-color: rgba(56, 189, 248, 0.4);  background: rgba(56, 189, 248, 0.07); }
+    .dt-node--green { border-color: rgba(74, 222, 128, 0.4);  background: rgba(74, 222, 128, 0.07); }
+    .dt-node--red   { border-color: rgba(248, 113, 113, 0.4); background: rgba(248, 113, 113, 0.07); }
+    .dt-node--purple{ border-color: rgba(167, 139, 250, 0.4); background: rgba(167, 139, 250, 0.07); }
+    .dt-arrow { color: #475569; font-size: 1.1rem; padding: 4px 0; text-align: center; }
+    .dt-branches {
+      display: flex;
+      width: 100%;
+      max-width: 560px;
+      gap: 12px;
+      margin-top: 0;
+    }
+    .dt-branch {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0;
+    }
+    .dt-branch-label {
+      font-size: 0.75rem;
+      color: #64748b;
+      padding: 2px 0;
+    }
+
+    /* ===== Formula Box ===== */
+    .formula-box {
+      margin: 14px 0;
+      padding: 16px 20px;
+      border-radius: 10px;
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid rgba(99, 102, 241, 0.25);
+      font-family: "JetBrains Mono", monospace;
+      font-size: 0.84rem;
+      color: #e2e8f0;
+      line-height: 2;
+    }
+    .formula-box .label { font-size: 0.72rem; color: #64748b; margin-bottom: 6px; font-family: sans-serif; }
+    .formula-box .eq  { color: #a5b4fc; }
+    .formula-box .fvar{ color: #38bdf8; }
+    .formula-box .op  { color: #94a3b8; }
+    .formula-box .res { color: #4ade80; font-weight: 600; }
+    .formula-box .note{ color: #64748b; font-size: 0.78rem; }
+
+    /* ===== Tips Grid ===== */
+    .tips-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 14px;
+      margin: 16px 0;
+    }
+    .tip-card {
+      padding: 16px;
+      border-radius: 10px;
+      border: 1px solid rgba(148, 163, 184, 0.12);
+      background: rgba(15, 23, 42, 0.7);
+    }
+    .tip-card__num {
+      font-size: 1.4rem;
+      font-weight: 800;
+      color: #38bdf8;
+      margin-bottom: 6px;
+    }
+    .tip-card__title { font-size: 0.88rem; font-weight: 600; color: #f1f5f9; margin-bottom: 6px; }
+    .tip-card__desc  { font-size: 0.8rem; color: #64748b; }
+
+    /* ===== Table ===== */
+    .data-table { width: 100%; margin: 14px 0; border-collapse: collapse; font-size: 0.85rem; }
+    .data-table th, .data-table td {
+      padding: 10px 14px;
+      border: 1px solid rgba(148, 163, 184, 0.12);
+      text-align: left;
+    }
+    .data-table th { background: rgba(99, 102, 241, 0.1); color: #a5b4fc; font-weight: 600; }
+    .data-table td { color: #94a3b8; }
+    .data-table code {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 0.8rem; color: #38bdf8;
+      background: rgba(56, 189, 248, 0.08);
+      padding: 1px 5px; border-radius: 3px;
+    }
+
+    .back-top {
+      display: inline-block; margin-top: 40px;
+      padding: 8px 16px;
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      border-radius: 8px; font-size: 0.85rem; color: #94a3b8;
+      transition: all 0.2s;
+    }
+    .back-top:hover { border-color: rgba(56, 189, 248, 0.4); color: #38bdf8; text-decoration: none; }
+
+    @media (max-width: 640px) {
+      .container { padding: 24px 16px 40px; }
+      .page-title { font-size: 1.5rem; }
+      .pipeline { flex-direction: column; }
+      .pipe-arrow { transform: rotate(90deg); align-self: center; }
+      .dt-branches { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-grid"></div>
+  <div class="container">
+
+    <!-- Breadcrumb -->
+    <nav class="breadcrumb">
+      <a href="../../index.html">🏠 Home</a> / <a href="index.html">⚡ vLLM</a> / <span>Speculative Decoding 应用解析</span>
+    </nav>
+
+    <!-- Title -->
+    <h1 class="page-title">从 LLM 应用角度理解 Speculative Decoding</h1>
+    <p class="page-meta">以 draft → verify → reject 三阶段为主线，理解投机解码的工作原理、接受率数学推导，以及提升接受率的实践技巧</p>
+
+    <!-- ===== Section 1: 背景与动机 ===== -->
+    <section class="section">
+      <h2 class="section-title"><span class="emoji">🎯</span>背景与动机</h2>
+      <p>大模型推理的瓶颈在于 <strong>自回归解码</strong>：每次 forward pass 只能生成 1 个 token，GPU 的计算能力大量浪费在 memory-bandwidth 上，而非真正的矩阵运算。</p>
+      <p><strong>Speculative Decoding（投机解码）</strong> 的核心思路：用一个小而快的 <em>draft model</em> 先"猜"出 K 个候选 token，再让大 <em>target model</em> 在 <strong>1 次 forward</strong> 中同时验证全部 K 个 token，最终通过拒绝采样保证输出分布与纯 target model 完全等价。</p>
+      <div class="info-box">
+        <p><strong>关键保证：</strong>在数学上，经过正确的拒绝采样后，最终输出的 token 分布与只用 target model 自回归采样完全一致（分布等价，非近似）。</p>
+      </div>
+      <div class="info-box info-box--warn">
+        <p>⚠️ <strong>实际注意：</strong>开启 spec decode 后，生成结果与纯 target model 推理<strong>不完全一致</strong>。这是因为 draft model 与 target model 即使在相同 input ids 下推测出的下一个 token 也可能不同，而这些不同的 draft token 在 case 1 和 case 2 中仍然可能被 accept，从而影响后续采样的随机数序列。</p>
+      </div>
+    </section>
+
+    <!-- ===== Section 2: 总体流程 ===== -->
+    <section class="section">
+      <h2 class="section-title"><span class="emoji">🗺️</span>总体流程：Draft → Verify → Reject</h2>
+
+      <!-- Pipeline -->
+      <div class="pipeline">
+        <div class="pipe-stage pipe-stage--cyan">
+          <div class="pipe-stage__num">1</div>
+          <div class="pipe-stage__title">Draft</div>
+          <div class="pipe-stage__desc">Draft model 自回归生成 K 个候选 token（快速，小模型）</div>
+        </div>
+        <div class="pipe-arrow">→</div>
+        <div class="pipe-stage pipe-stage--amber">
+          <div class="pipe-stage__num">2</div>
+          <div class="pipe-stage__title">Verify</div>
+          <div class="pipe-stage__desc">Target model 1 次 forward 同时计算所有 K+1 个位置的概率分布</div>
+        </div>
+        <div class="pipe-arrow">→</div>
+        <div class="pipe-stage pipe-stage--green">
+          <div class="pipe-stage__num">3</div>
+          <div class="pipe-stage__title">Reject Sampling</div>
+          <div class="pipe-stage__desc">逐位比较 p(x) 与 q(x)，决定 accept / reject，保证分布等价</div>
+        </div>
+      </div>
+
+      <!-- Token row example -->
+      <h3>示例：K = 4 个 draft token</h3>
+      <div class="token-row">
+        <span class="token-label">Prompt</span>
+        <span class="token token--prompt">The</span>
+        <span class="token token--prompt">sky</span>
+        <span class="token token--prompt">is</span>
+        <span class="token-sep">→</span>
+        <span class="token-label">Draft</span>
+        <span class="token token--draft">blue</span>
+        <span class="token token--draft">and</span>
+        <span class="token token--draft">very</span>
+        <span class="token token--draft">clear</span>
+        <span class="token-sep">→</span>
+        <span class="token-label">Target 验证</span>
+        <span class="token token--accept">blue ✓</span>
+        <span class="token token--accept">and ✓</span>
+        <span class="token token--reject">very ✗</span>
+        <span class="token token--correct">bright*</span>
+      </div>
+      <p style="font-size:0.82rem; color:#64748b;">* 第 3 个 draft token 被拒绝后，target model 从残差分布重新采样得到 correction token，后续 draft token 全部丢弃。</p>
+    </section>
+
+    <!-- ===== Section 3: Draft Model ===== -->
+    <section class="section">
+      <h2 class="section-title"><span class="emoji">✏️</span>阶段 1：Draft Model 生成 Draft Tokens</h2>
+      <p>Draft model 是一个与 target model 同架构但参数量更小的模型（例如 Llama-7B 给 Llama-70B 做草稿）。它以自回归方式连续生成 K 个 token，每次 forward 只需极少的计算量。</p>
+
+      <div class="token-row">
+        <span class="token-label">输入</span>
+        <span class="token token--prompt">t₁</span>
+        <span class="token token--prompt">t₂</span>
+        <span class="token token--prompt">…</span>
+        <span class="token token--prompt">tₙ</span>
+        <span class="token-sep">→</span>
+        <span class="token-label">Draft ×K</span>
+        <span class="token token--draft">d₁</span>
+        <span class="token token--draft">d₂</span>
+        <span class="token token--draft">…</span>
+        <span class="token token--draft">dₖ</span>
+      </div>
+
+      <div class="info-box">
+        <p><strong>输出：</strong>K 个 draft token <code>d₁…dₖ</code>，以及 draft model 在每个位置的概率分布 <code>q(x)</code>（用于后续拒绝采样）。</p>
+      </div>
+
+      <table class="data-table">
+        <thead>
+          <tr><th>参数</th><th>典型值</th><th>说明</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>K（draft 数量）</td><td>4 ~ 6</td><td>甜点区间；太小加速不足，太大后段 token 常被拒绝</td></tr>
+          <tr><td>Draft model 大小</td><td>Target 的 1/10 ~ 1/5</td><td>越小越快，但接受率越低</td></tr>
+          <tr><td>Draft model 类型</td><td>同家族小模型</td><td>Llama-7B → Llama-70B 效果远好于跨架构</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ===== Section 4: Target Verify ===== -->
+    <section class="section">
+      <h2 class="section-title"><span class="emoji">🔍</span>阶段 2：Target Model 1 次 Forward 验证所有 Draft Token</h2>
+      <p>将 prompt + K 个 draft token 拼接成长度为 <code>n + K</code> 的序列，送入 target model 做 <strong>1 次 forward pass</strong>，同时得到 K+1 个位置的 logits（对应 K 个验证位置 + 1 个新位置）。</p>
+
+      <div class="token-row">
+        <span class="token token--prompt">t₁</span>
+        <span class="token token--prompt">t₂</span>
+        <span class="token token--prompt">…</span>
+        <span class="token token--prompt">tₙ</span>
+        <span class="token token--draft">d₁</span>
+        <span class="token token--draft">d₂</span>
+        <span class="token token--draft">…</span>
+        <span class="token token--draft">dₖ</span>
+        <span class="token-sep">→</span>
+        <span class="token-label">Target 1× forward</span>
+        <span class="token token--accept">p(1)</span>
+        <span class="token token--accept">p(2)</span>
+        <span class="token token--accept">…</span>
+        <span class="token token--accept">p(K+1)</span>
+      </div>
+
+      <div class="info-box info-box--green">
+        <p>✅ <strong>加速来源：</strong>原本需要 K 次 forward（自回归），现在只需 1 次 forward（并行验证），节省了 K-1 次大模型推理开销。</p>
+      </div>
+
+      <p>Target model 输出每个位置的概率分布 <code>p(x)</code>，其中 <code>p(x, dₓ)</code> 表示 target model 在位置 x 对 draft token <code>dₓ</code> 赋予的概率。</p>
+    </section>
+
+    <!-- ===== Section 5: Reject Sampling ===== -->
+    <section class="section">
+      <h2 class="section-title"><span class="emoji">🎲</span>阶段 3：拒绝采样（Reject Sampling）</h2>
+
+      <h3>符号定义</h3>
+      <div class="formula-box">
+        <div class="label">符号说明</div>
+<span class="fvar">p(x)</span>     <span class="op">=</span> target model 在位置 x 的概率分布向量（vocab_size 维）
+<span class="fvar">q(x)</span>     <span class="op">=</span> draft model 在位置 x 的概率分布向量（vocab_size 维）
+<span class="fvar">p(x, dt)</span> <span class="op">=</span> target model 对 draft token dt 在位置 x 的概率：p(x)[dt]
+<span class="fvar">q(x, dt)</span> <span class="op">=</span> draft model 对 draft token dt 在位置 x 的概率：q(x)[dt]
+      </div>
+
+      <h3>逐位决策流程</h3>
+      <p>对每个 draft token <code>dₓ</code>（从左到右），执行以下决策：</p>
+
+      <div class="decision-tree">
+        <div class="dt-root">
+          <div class="dt-node dt-node--cyan">比较 p(x, dt) 与 q(x, dt)</div>
+          <div class="dt-arrow">↓</div>
+          <div class="dt-branches">
+            <!-- Case 1 -->
+            <div class="dt-branch">
+              <div class="dt-branch-label">Case 1：p ≥ q</div>
+              <div class="dt-node dt-node--green">直接 Accept ✓<br><span style="font-size:0.78rem;color:#86efac;">target 比 draft 更偏好此 token</span></div>
+            </div>
+            <!-- Case 2 -->
+            <div class="dt-branch">
+              <div class="dt-branch-label">Case 2：p &lt; q</div>
+              <div class="dt-node">以概率 p(x,dt)/q(x,dt) 接受<br><span style="font-size:0.78rem;color:#94a3b8;">r = random(0,1)</span></div>
+              <div class="dt-arrow">↓</div>
+              <div class="dt-branches">
+                <div class="dt-branch">
+                  <div class="dt-branch-label">r &lt; p/q</div>
+                  <div class="dt-node dt-node--green">Accept ✓</div>
+                </div>
+                <div class="dt-branch">
+                  <div class="dt-branch-label">r ≥ p/q</div>
+                  <div class="dt-node dt-node--red">Reject ✗<br><span style="font-size:0.78rem;color:#fca5a5;">从残差分布重采样</span></div>
+                  <div class="dt-arrow">↓</div>
+                  <div class="dt-node dt-node--purple">Correction Token *<br><span style="font-size:0.78rem;color:#c4b5fd;">后续所有 draft token 丢弃</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <h3>Correction Token 的计算</h3>
+      <p>当 draft token 被拒绝时，需要从 <strong>残差分布</strong> 中重新采样，以保证最终输出分布等价于纯 target model：</p>
+      <div class="code-block">
+<span class="cmt"># 残差分布：clamp 后归一化</span>
+residual = torch.<span class="fn">clamp</span>(p_dist - q_dist, <span class="var">min</span>=<span class="num">0</span>)
+correction = torch.<span class="fn">multinomial</span>(residual, num_samples=<span class="num">1</span>)
+      </div>
+      <div class="info-box info-box--purple">
+        <p><strong>直觉：</strong><code>p - q</code> 表示 target model 相对于 draft model "多出来"的概率质量。clamp 到 0 以上后归一化，得到的分布只包含 target model 比 draft model 更偏好的 token，从而修正 draft model 的偏差。</p>
+      </div>
+
+      <h3>概率对比可视化（示例）</h3>
+      <p>假设位置 x=2，draft token 为 "very"，vocab 中部分 token 的概率如下：</p>
+      <div class="prob-matrix">
+        <div class="prob-row">
+          <span class="prob-label">p("very")</span>
+          <div class="prob-bar-wrap">
+            <div class="prob-bar prob-bar--p" style="width:25%">0.25</div>
+          </div>
+        </div>
+        <div class="prob-row">
+          <span class="prob-label">q("very")</span>
+          <div class="prob-bar-wrap">
+            <div class="prob-bar prob-bar--q" style="width:55%">0.55</div>
+          </div>
+        </div>
+      </div>
+      <p style="font-size:0.82rem;color:#64748b;">p &lt; q → Case 2，以概率 0.25/0.55 ≈ 0.45 接受。若被拒绝，从 clamp(p - q, 0) 归一化后重采样，得到 target model 更偏好的 token（如 "bright"）。</p>
+    </section>
+
+    <!-- ===== Section 6: 具体示例 ===== -->
+    <section class="section">
+      <h2 class="section-title"><span class="emoji">📐</span>完整示例走查</h2>
+      <p>以 K=4 为例，展示一次完整的 spec decode 步骤结果：</p>
+
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>位置</th>
+            <th>Draft token</th>
+            <th>p(x, dt)</th>
+            <th>q(x, dt)</th>
+            <th>Case</th>
+            <th>结果</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>x=1</td>
+            <td><code>blue</code></td>
+            <td>0.70</td>
+            <td>0.50</td>
+            <td>Case 1（p ≥ q）</td>
+            <td>✅ Accept</td>
+          </tr>
+          <tr>
+            <td>x=2</td>
+            <td><code>and</code></td>
+            <td>0.60</td>
+            <td>0.40</td>
+            <td>Case 1（p ≥ q）</td>
+            <td>✅ Accept</td>
+          </tr>
+          <tr>
+            <td>x=3</td>
+            <td><code>very</code></td>
+            <td>0.25</td>
+            <td>0.55</td>
+            <td>Case 2，r=0.60 ≥ 0.45</td>
+            <td>❌ Reject → 采样 <code>bright</code></td>
+          </tr>
+          <tr>
+            <td>x=4</td>
+            <td><code>clear</code></td>
+            <td>—</td>
+            <td>—</td>
+            <td>—</td>
+            <td>🗑️ 丢弃（前序已拒绝）</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="token-row">
+        <span class="token-label">最终输出</span>
+        <span class="token token--accept">blue</span>
+        <span class="token token--accept">and</span>
+        <span class="token token--correct">bright</span>
+        <span class="token-label">（本步共接受 3 个 token）</span>
+      </div>
+
+      <div class="info-box info-box--green">
+        <p>✅ 本步 1 次 target forward 产出了 3 个 token（2 accept + 1 correction），相比纯自回归节省了 2 次 target forward。</p>
+      </div>
+    </section>
+
+    <!-- ===== Section 7: 提高接受率 ===== -->
+    <section class="section">
+      <h2 class="section-title"><span class="emoji">🚀</span>提高 Spec Decode 接受率的方法</h2>
+      <p>接受率（acceptance rate）越高，每步产出的有效 token 越多，加速比越大。以下是四个关键维度：</p>
+
+      <div class="tips-grid">
+        <div class="tip-card">
+          <div class="tip-card__num">01</div>
+          <div class="tip-card__title">同模型家族</div>
+          <div class="tip-card__desc">用 Llama-7B 给 Llama-70B 做草稿，远好于混用不同架构。相同训练数据和目标使两者分布更接近。</div>
+        </div>
+        <div class="tip-card">
+          <div class="tip-card__num">02</div>
+          <div class="tip-card__title">任务可预测性</div>
+          <div class="tip-card__desc">代码补全、翻译、结构化输出的接受率通常高于创作类写作或开放式聊天。</div>
+        </div>
+        <div class="tip-card">
+          <div class="tip-card__num">03</div>
+          <div class="tip-card__title">更低温度</div>
+          <div class="tip-card__desc">采样更确定时，草稿模型与目标模型更可能一致，接受率显著提升。</div>
+        </div>
+        <div class="tip-card">
+          <div class="tip-card__num">04</div>
+          <div class="tip-card__title">合适的 K 值</div>
+          <div class="tip-card__desc">K=4~6 通常是甜点区间。太小（K=2）加速不足；太大（K=10）后段 token 常被拒绝，反而浪费。</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Section 8: 总结 ===== -->
+    <section class="section">
+      <h2 class="section-title"><span class="emoji">📝</span>总结</h2>
+      <p>Speculative Decoding 的核心价值在于：</p>
+      <ol>
+        <li><strong>分布等价</strong>：拒绝采样在数学上保证输出分布与纯 target model 一致（理论上）</li>
+        <li><strong>加速来源</strong>：用 K 次小模型 forward 换取 1 次大模型 forward，节省 K-1 次大模型推理</li>
+        <li><strong>接受率决定收益</strong>：接受率越高，每步产出 token 越多，加速比越大</li>
+        <li><strong>实际不完全一致</strong>：draft model 的存在改变了随机数序列，导致与纯 target 推理结果有差异</li>
+      </ol>
+
+      <div class="info-box info-box--green">
+        <p>✅ <strong>关键公式：</strong>Correction token 来自 <code>clamp(p_dist - q_dist, min=0)</code> 归一化后的残差分布，这是保证分布等价的数学核心。</p>
+      </div>
+
+      <table class="data-table">
+        <thead>
+          <tr><th>阶段</th><th>执行者</th><th>输入</th><th>输出</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Draft</td><td>Draft model（小）</td><td>Prompt tokens</td><td>K 个 draft token + q(x) 分布</td></tr>
+          <tr><td>Verify</td><td>Target model（大）</td><td>Prompt + K draft tokens</td><td>K+1 个位置的 p(x) 分布</td></tr>
+          <tr><td>Reject Sampling</td><td>CPU/算法</td><td>p(x), q(x), draft tokens</td><td>接受的 token 序列 + correction token</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Back -->
+    <a href="index.html" class="back-top">← 返回 vLLM 模块</a>
+
+  </div>
+</body>
+</html>
