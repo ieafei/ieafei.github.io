@@ -63,7 +63,7 @@
           <h2 class="category__title">特性分析</h2>
           <p class="category__desc">深入分析 vLLM 的核心特性和优化技术：PagedAttention、投机解码、Prefix Cache 等</p>
         </div>
-        <span class="category__count">1 note</span>
+        <span class="category__count">2 notes</span>
       </div>
       <div class="note-list">
         <a href="features/spec_decode_from_llm.html" class="note-card">
@@ -71,6 +71,14 @@
           <div class="note-card__body">
             <h4 class="note-card__title">从 LLM 应用角度理解 Speculative Decoding</h4>
             <p class="note-card__desc">以 draft → verify → reject 三阶段为主线，解析投机解码的工作原理、拒绝采样数学推导（残差分布 correction token）、以及提升接受率的四个实践技巧</p>
+          </div>
+          <span class="note-card__arrow">→</span>
+        </a>
+        <a href="features/eagle_speculator.html" class="note-card">
+          <span class="note-card__icon">📄</span>
+          <div class="note-card__body">
+            <h4 class="note-card__title">EAGLE Speculator 工作原理</h4>
+            <p class="note-card__desc">深入剖析 vLLM 中 EAGLE 投机解码的执行链路：propose → execute_model → rejection_sample → propose 循环、(token, hidden) 二元组错位拼接、target/draft 独立 KV cache 设计</p>
           </div>
           <span class="note-card__arrow">→</span>
         </a>

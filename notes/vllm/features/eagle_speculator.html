@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EAGLE Speculator 工作原理 - ieafei's Learning Hub</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    html { font-size: 16px; scroll-behavior: smooth; }
+    body {
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: #0b0f1a;
+      color: #e2e8f0;
+      line-height: 1.7;
+      overflow-x: hidden;
+    }
+    a { color: #38bdf8; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .bg-grid {
+      position: fixed; inset: 0; z-index: 0;
+      background-image:
+        linear-gradient(rgba(56, 189, 248, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(56, 189, 248, 0.03) 1px, transparent 1px);
+      background-size: 60px 60px;
+      pointer-events: none;
+    }
+
+    .container {
+      position: relative; z-index: 1;
+      max-width: 960px; margin: 0 auto;
+      padding: 40px 24px 60px;
+    }
+
+    .breadcrumb {
+      margin-bottom: 32px;
+      font-size: 0.85rem;
+      color: #64748b;
+    }
+    .breadcrumb a { color: #94a3b8; }
+    .breadcrumb a:hover { color: #38bdf8; }
+
+    .page-title {
+      font-size: 2rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #38bdf8, #818cf8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 12px;
+    }
+    .page-meta { font-size: 0.88rem; color: #64748b; margin-bottom: 40px; }
+
+    .section { margin-bottom: 52px; }
+    .section-title {
+      font-size: 1.4rem; font-weight: 700; color: #f1f5f9;
+      margin-bottom: 16px; padding-bottom: 8px;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+    }
+    .section-title .emoji { margin-right: 8px; }
+
+    h3 { font-size: 1.05rem; font-weight: 600; color: #cbd5e1; margin: 24px 0 10px; }
+    h4 { font-size: 0.95rem; font-weight: 600; color: #cbd5e1; margin: 18px 0 8px; }
+    p { margin-bottom: 14px; color: #94a3b8; }
+    ul, ol { margin: 0 0 14px 20px; color: #94a3b8; }
+    li { margin-bottom: 6px; }
+
+    /* ===== Code Block ===== */
+    .code-block {
+      margin: 14px 0 20px;
+      padding: 16px 20px;
+      border-radius: 10px;
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid rgba(148, 163, 184, 0.15);
+      overflow-x: auto;
+      white-space: pre;
+      font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
+      font-size: 0.82rem;
+      line-height: 1.75;
+      color: #e2e8f0;
+    }
+    .kw  { color: #c084fc; }
+    .fn  { color: #38bdf8; }
+    .str { color: #4ade80; }
+    .num { color: #fb923c; }
+    .cmt { color: #64748b; }
+    .var { color: #fde68a; }
+    .hl-good { color: #4ade80; }
+    .hl-bad  { color: #fca5a5; }
+
+    /* ===== Info / Warn / Green Box ===== */
+    .info-box {
+      margin: 14px 0;
+      padding: 13px 18px;
+      border-radius: 8px;
+      border-left: 4px solid #38bdf8;
+      background: rgba(56, 189, 248, 0.06);
+    }
+    .info-box p { color: #cbd5e1; margin: 0; font-size: 0.88rem; }
+    .info-box--warn { border-left-color: #fbbf24; background: rgba(251, 191, 36, 0.06); }
+    .info-box--warn p { color: #fde68a; }
+    .info-box--green { border-left-color: #4ade80; background: rgba(74, 222, 128, 0.06); }
+    .info-box--green p { color: #bbf7d0; }
+    .info-box--purple { border-left-color: #a78bfa; background: rgba(167, 139, 250, 0.06); }
+    .info-box--purple p { color: #ddd6fe; }
+    .info-box--red { border-left-color: #f87171; background: rgba(248, 113, 113, 0.06); }
+    .info-box--red p { color: #fecaca; }
+
+    /* ===== Pipeline Steps ===== */
+    .pipeline-steps {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      margin: 24px 0;
+    }
+    .pipe-step {
+      width: 100%;
+      padding: 18px 22px;
+      border-radius: 10px;
+      border: 1px solid rgba(99, 102, 241, 0.3);
+      background: rgba(99, 102, 241, 0.06);
+    }
+    .pipe-step--cyan  { border-color: rgba(56, 189, 248, 0.4);  background: rgba(56, 189, 248, 0.06); }
+    .pipe-step--amber { border-color: rgba(251, 191, 36, 0.35); background: rgba(251, 191, 36, 0.05); }
+    .pipe-step--green { border-color: rgba(74, 222, 128, 0.35); background: rgba(74, 222, 128, 0.05); }
+    .pipe-step--purple{ border-color: rgba(167, 139, 250, 0.35); background: rgba(167, 139, 250, 0.05); }
+    .pipe-step__head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .pipe-step__num {
+      display: inline-flex;
+      align-items: center; justify-content: center;
+      width: 26px; height: 26px;
+      border-radius: 50%;
+      font-size: 0.78rem; font-weight: 700;
+      background: rgba(99, 102, 241, 0.25); color: #a5b4fc;
+      flex-shrink: 0;
+    }
+    .pipe-step--cyan  .pipe-step__num { background: rgba(56, 189, 248, 0.2);  color: #7dd3fc; }
+    .pipe-step--amber .pipe-step__num { background: rgba(251, 191, 36, 0.2);  color: #fde68a; }
+    .pipe-step--green .pipe-step__num { background: rgba(74, 222, 128, 0.2);  color: #86efac; }
+    .pipe-step--purple .pipe-step__num{ background: rgba(167, 139, 250, 0.2); color: #c4b5fd; }
+    .pipe-step__title { font-size: 1rem; font-weight: 700; color: #f1f5f9; }
+    .pipe-step__sub   { font-size: 0.82rem; color: #94a3b8; margin: 0; }
+    .pipe-arrow-v {
+      align-self: center;
+      color: #475569;
+      font-size: 1.4rem;
+      padding: 4px 0;
+    }
+
+    /* ===== Token Row Diagram ===== */
+    .token-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin: 10px 0;
+      flex-wrap: wrap;
+    }
+    .token {
+      display: inline-flex;
+      align-items: center; justify-content: center;
+      min-width: 56px; height: 36px;
+      padding: 0 10px;
+      border-radius: 6px;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 0.78rem;
+      font-weight: 600;
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      background: rgba(15, 23, 42, 0.8);
+      color: #94a3b8;
+    }
+    .token--prompt { border-color: rgba(56, 189, 248, 0.4); color: #7dd3fc; background: rgba(56, 189, 248, 0.08); }
+    .token--draft  { border-color: rgba(251, 191, 36, 0.4);  color: #fde68a; background: rgba(251, 191, 36, 0.08); }
+    .token--accept { border-color: rgba(74, 222, 128, 0.4);  color: #86efac; background: rgba(74, 222, 128, 0.08); }
+    .token--reject { border-color: rgba(248, 113, 113, 0.4); color: #fca5a5; background: rgba(248, 113, 113, 0.08); }
+    .token--bonus  { border-color: rgba(167, 139, 250, 0.4); color: #c4b5fd; background: rgba(167, 139, 250, 0.08); }
+    .token--hidden { border-color: rgba(96, 165, 250, 0.4); color: #93c5fd; background: rgba(96, 165, 250, 0.08); }
+    .token--garbage{ border-color: rgba(148, 163, 184, 0.3); color: #64748b; background: rgba(148, 163, 184, 0.04); text-decoration: line-through; }
+    .token-label { font-size: 0.72rem; color: #64748b; margin: 0 6px; min-width: 80px; }
+    .token-sep { color: #475569; font-size: 1.1rem; }
+
+    /* ===== KV Cache Visual ===== */
+    .gpu-mem-box {
+      margin: 18px 0;
+      padding: 18px;
+      border-radius: 10px;
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px dashed rgba(148, 163, 184, 0.25);
+    }
+    .gpu-mem-box__title {
+      font-size: 0.85rem; color: #94a3b8;
+      text-align: center; margin-bottom: 14px;
+      font-weight: 600;
+    }
+    .kv-block {
+      margin: 10px 0;
+      padding: 14px 16px;
+      border-radius: 8px;
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      background: rgba(15, 23, 42, 0.6);
+    }
+    .kv-block--target { border-color: rgba(56, 189, 248, 0.4);  background: rgba(56, 189, 248, 0.05); }
+    .kv-block--draft  { border-color: rgba(251, 191, 36, 0.4);  background: rgba(251, 191, 36, 0.05); }
+    .kv-block__title {
+      font-size: 0.82rem; font-weight: 700;
+      margin-bottom: 6px;
+      font-family: "JetBrains Mono", monospace;
+    }
+    .kv-block--target .kv-block__title { color: #7dd3fc; }
+    .kv-block--draft  .kv-block__title { color: #fde68a; }
+    .kv-block__detail {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 0.78rem; color: #94a3b8;
+      line-height: 1.7;
+    }
+
+    /* ===== Q&A Card ===== */
+    .qa-card {
+      margin: 18px 0;
+      padding: 20px 22px;
+      border-radius: 10px;
+      border: 1px solid rgba(148, 163, 184, 0.15);
+      background: rgba(15, 23, 42, 0.6);
+    }
+    .qa-card__q {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      margin-bottom: 14px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+    }
+    .qa-card__q-icon {
+      flex-shrink: 0;
+      width: 26px; height: 26px;
+      border-radius: 50%;
+      display: inline-flex; align-items: center; justify-content: center;
+      background: rgba(56, 189, 248, 0.2);
+      color: #7dd3fc;
+      font-weight: 700; font-size: 0.85rem;
+    }
+    .qa-card__q-text {
+      font-size: 1rem; font-weight: 600; color: #f1f5f9;
+      line-height: 1.5;
+    }
+    .qa-card__a {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+    }
+    .qa-card__a-icon {
+      flex-shrink: 0;
+      width: 26px; height: 26px;
+      border-radius: 50%;
+      display: inline-flex; align-items: center; justify-content: center;
+      background: rgba(74, 222, 128, 0.2);
+      color: #86efac;
+      font-weight: 700; font-size: 0.85rem;
+    }
+    .qa-card__a-body { flex: 1; }
+    .qa-card__a-body p { color: #cbd5e1; }
+    .qa-card__a-body p:last-child { margin-bottom: 0; }
+
+    /* ===== Step Annotation ===== */
+    .step-anno {
+      margin: 12px 0;
+      padding: 10px 14px;
+      border-radius: 6px;
+      background: rgba(56, 189, 248, 0.05);
+      border-left: 3px solid #38bdf8;
+      font-size: 0.85rem;
+      color: #cbd5e1;
+    }
+    .step-anno strong { color: #7dd3fc; }
+
+    /* ===== Tree (call flow) ===== */
+    .call-tree {
+      margin: 14px 0;
+      padding: 16px 20px;
+      border-radius: 10px;
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid rgba(148, 163, 184, 0.12);
+      font-family: "JetBrains Mono", monospace;
+      font-size: 0.82rem;
+      line-height: 1.85;
+      color: #cbd5e1;
+      white-space: pre;
+      overflow-x: auto;
+    }
+    .call-tree .ct-fn   { color: #38bdf8; }
+    .call-tree .ct-cmt  { color: #64748b; }
+    .call-tree .ct-line { color: #475569; }
+    .call-tree .ct-key  { color: #fde68a; }
+
+    /* ===== Table ===== */
+    .data-table { width: 100%; margin: 14px 0; border-collapse: collapse; font-size: 0.85rem; }
+    .data-table th, .data-table td {
+      padding: 10px 14px;
+      border: 1px solid rgba(148, 163, 184, 0.12);
+      text-align: left;
+    }
+    .data-table th { background: rgba(99, 102, 241, 0.1); color: #a5b4fc; font-weight: 600; }
+    .data-table td { color: #94a3b8; }
+    .data-table code {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 0.8rem; color: #38bdf8;
+      background: rgba(56, 189, 248, 0.08);
+      padding: 1px 5px; border-radius: 3px;
+    }
+
+    .back-top {
+      display: inline-block; margin-top: 40px;
+      padding: 8px 16px;
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      border-radius: 8px; font-size: 0.85rem; color: #94a3b8;
+      transition: all 0.2s;
+    }
+    .back-top:hover { border-color: rgba(56, 189, 248, 0.4); color: #38bdf8; text-decoration: none; }
+
+    @media (max-width: 640px) {
+      .container { padding: 24px 16px 40px; }
+      .page-title { font-size: 1.5rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-grid"></div>
+  <div class="container">
+
+    <!-- Breadcrumb -->
+    <nav class="breadcrumb">
+      <a href="../../../index.html">🏠 Home</a> / <a href="../index.html">⚡ vLLM</a> / <span>EAGLE Speculator 工作原理</span>
+    </nav>
+
+    <!-- Title -->
+    <h1 class="page-title">EAGLE Speculator 工作原理</h1>
+    <p class="page-meta">深入剖析 vLLM 中 EAGLE 投机解码的执行链路：propose → execute_model → rejection_sample → propose 循环，以及 KV cache 写入策略</p>
+
+    <!-- ===== Section 1: 描述 ===== -->
+    <section class="section">
+      <h2 class="section-title"><span class="emoji">📍</span>组件位置与调用链</h2>
+
+      <table class="data-table">
+        <thead>
+          <tr><th>项目</th><th>详情</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>源码位置</td><td><code>vllm/v1/worker/gpu/spec_decode/eagle/speculator.py</code></td></tr>
+          <tr><td>核心函数</td><td><code>propose()</code></td></tr>
+          <tr><td>外部调用入口</td><td><code>engine_core.model_executor.sample_tokens()</code> → <code>engine_core.speculator.propose()</code></td></tr>
+        </tbody>
+      </table>
+
+      <h3>跨步调用流程（Step N → Step N+1）</h3>
+      <div class="call-tree"><span class="ct-key">Step N:</span>
+  speculator.<span class="ct-fn">propose</span>()  →  生成 draft_tokens[0..K-1]，存入 req_states.draft_tokens
+
+<span class="ct-key">Step N+1:</span>
+  <span class="ct-fn">execute_model</span>()
+    └── <span class="ct-fn">prepare_inputs</span>()
+        └── <span class="ct-fn">combine_sampled_and_draft_tokens</span>()
+            ├── input_ids = [..., last_sampled, draft_0, draft_1, ..., draft_K-1]
+            └── logits_indices = [每个 req 的 logits 位置]
+    └── <span class="ct-fn">target_model.forward</span>(input_ids)   <span class="ct-cmt">← 一次 forward 同时 verify 所有 draft tokens</span>
+
+  <span class="ct-fn">sample_tokens</span>()
+    └── self.<span class="ct-fn">sample</span>() → <span class="ct-fn">rejection_sampler</span>(logits, speculator.logits)   <span class="ct-cmt">← 逐个验证，接受/拒绝</span>
+          └── speculator.<span class="ct-fn">propose</span>()  →  生成下一轮 draft_tokens</div>
+
+      <div class="info-box">
+        <p><strong>关键设计：</strong>每一轮的 <code>propose()</code> 都依赖<strong>上一轮 target model forward 产出的 hidden states</strong>，这是 EAGLE 区别于普通 spec decode 的核心。</p>
+      </div>
+    </section>
+
+    <!-- ===== Section 2: 三阶段执行 ===== -->
+    <section class="section">
+      <h2 class="section-title"><span class="emoji">🔧</span>EAGLE 在 Model Runner 中的三阶段执行</h2>
+      <p>设定一个具体场景作为主线：</p>
+      <ul>
+        <li>已生成 100 个 token：<code>tok[0..99]</code></li>
+        <li>上一轮 sample 出的 last_sampled：<strong>L</strong>（即 <code>tok[99]</code>）</li>
+        <li>上一轮 propose 的 3 个 draft：<strong>d1, d2, d3</strong></li>
+      </ul>
+
+      <div class="pipeline-steps">
+
+        <!-- Stage 1: execute_model -->
+        <div class="pipe-step pipe-step--cyan">
+          <div class="pipe-step__head">
+            <span class="pipe-step__num">1</span>
+            <span class="pipe-step__title">execute_model — Target Model 一次 Forward</span>
+          </div>
+          <p class="pipe-step__sub">将 last_sampled + draft tokens 一起送入 target model，同时验证所有 draft</p>
+
+          <div class="code-block"><span class="cmt"># 输入张量布局（query_len = 4）</span>
+input_ids:    [<span class="hl-good">L</span>,    <span class="var">d1</span>,   <span class="var">d2</span>,   <span class="var">d3</span> ]
+positions:    [99,   100,  101,  102]
+KV 读 (旧):   slot 0 ~ 98       <span class="cmt"># 已存在</span>
+KV 写 (新):   slot 99 ~ 102     <span class="cmt"># 全部立即写入！</span>
+output:       [<span class="hl-good">h0</span>,   <span class="hl-good">h1</span>,   <span class="hl-good">h2</span>,   <span class="hl-good">h3</span>]   <span class="cmt"># shape [4, hidden_size]</span></div>
+
+          <div class="info-box info-box--warn">
+            <p>⚠️ <strong>关键时刻：</strong>L 在<strong>这一轮才正式参与计算并写入 KV</strong>——上一轮 sample 它的时候只是从上一步 hidden 走 lm_head 得到了 token id，并没有让 L 作为 input 走过 forward。</p>
+          </div>
+        </div>
+
+        <div class="pipe-arrow-v">↓</div>
+
+        <!-- Stage 2: rejection sample -->
+        <div class="pipe-step pipe-step--amber">
+          <div class="pipe-step__head">
+            <span class="pipe-step__num">2</span>
+            <span class="pipe-step__title">Rejection Sample — 逐位验证 Draft Tokens</span>
+          </div>
+          <p class="pipe-step__sub">用 hidden states 计算 logits，对每个 draft 决定 accept 或 reject</p>
+
+          <table class="data-table">
+            <thead>
+              <tr><th>位置</th><th>用到的 hidden</th><th>验证目标</th><th>结果</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>99</td>  <td><code>h0</code></td> <td>验证 <code>d1</code></td> <td>✅ 接受</td></tr>
+              <tr><td>100</td> <td><code>h1</code></td> <td>验证 <code>d2</code></td> <td>✅ 接受</td></tr>
+              <tr><td>101</td> <td><code>h2</code></td> <td>验证 <code>d3</code></td> <td>❌ 拒绝，从 <code>h2</code> 重采样得到 <strong>t_bonus</strong></td></tr>
+              <tr><td>102</td> <td><code>h3</code></td> <td>—</td> <td>🗑️ 作废</td></tr>
+            </tbody>
+          </table>
+
+          <div class="code-block"><span class="cmt"># 状态更新</span>
+num_sampled  = <span class="num">3</span>      <span class="cmt"># d1, d2, t_bonus</span>
+num_rejected = <span class="num">1</span>      <span class="cmt"># d3</span>
+last_sampled = <span class="hl-good">t_bonus</span>     <span class="cmt"># 写入 req_states.last_sampled_tokens</span>
+all_token_ids[100..102] = [<span class="var">d1</span>, <span class="var">d2</span>, <span class="hl-good">t_bonus</span>]   <span class="cmt"># 提交到状态</span>
+num_computed_tokens = <span class="num">103</span></div>
+
+          <div class="token-row">
+            <span class="token-label">最终接受</span>
+            <span class="token token--accept">d1</span>
+            <span class="token token--accept">d2</span>
+            <span class="token token--bonus">t_bonus</span>
+          </div>
+        </div>
+
+        <div class="pipe-arrow-v">↓</div>
+
+        <!-- Stage 3: speculator.propose -->
+        <div class="pipe-step pipe-step--purple">
+          <div class="pipe-step__head">
+            <span class="pipe-step__num">3</span>
+            <span class="pipe-step__title">speculator.propose() — 生成下一轮 Draft</span>
+          </div>
+          <p class="pipe-step__sub">复用 target model 的 hidden + 处理后的 input_ids，喂给 draft model 推理出新一批 draft</p>
+
+          <h4>3.1 传参</h4>
+          <div class="code-block">last_hidden_states = [<span class="hl-good">h0</span>, <span class="hl-good">h1</span>, <span class="hl-good">h2</span>, <span class="hl-good">h3</span>]   <span class="cmt"># 全传，shape [4, H]</span>
+num_sampled        = <span class="num">3</span>
+num_rejected       = <span class="num">1</span>                  <span class="cmt"># 用这个让 kernel "逻辑剔除" h3</span>
+last_sampled       = <span class="hl-good">t_bonus</span></div>
+
+          <h4>3.2 Kernel 内 input_ids 左移</h4>
+          <div class="code-block"><span class="cmt"># target 输入</span>
+target input_ids:   [L,  d1, d2, d3]
+                     ↓   ↓   ↓
+<span class="cmt"># 左移 1 位（每个 input 接收下一位 token）</span>
+draft input_ids:    [d1, d2, ?,  ?]
+                                 ↑
+                       写入 t_bonus (last_sampled)
+
+<span class="cmt"># 最终 draft 输入</span>
+draft input_ids:    [<span class="var">d1</span>, <span class="var">d2</span>, <span class="hl-good">t_bonus</span>, <span class="hl-bad">d3(残留无用)</span>]
+hidden 不动:        [<span class="hl-good">h0</span>, <span class="hl-good">h1</span>, <span class="hl-good">h2</span>,      <span class="hl-good">h3</span>]
+
+<span class="cmt"># 有效长度</span>
+有效 query_len   = <span class="num">4</span> - num_rejected = <span class="num">3</span>
+last_token_index 指向位置 <span class="num">2</span>（即 (t_bonus, h2)）</div>
+
+          <div class="info-box info-box--purple">
+            <p>💡 <strong>错位拼接的本质：</strong>draft model 拿 <code>(token[i+1], hidden[i])</code> 做输入，目的是让它通过<strong>已有的下一个 token</strong> + <strong>上一步压缩的语义</strong>，预测出 <code>token[i+2]</code>。</p>
+          </div>
+
+          <h4>3.3 Draft Model Prefill 整体 Forward</h4>
+          <div class="code-block">input_ids:   [<span class="var">d1</span>,    <span class="var">d2</span>,    <span class="hl-good">t_bonus</span>,    <span class="hl-bad">d3残留</span>]
+hidden:      [<span class="hl-good">h0</span>,    <span class="hl-good">h1</span>,    <span class="hl-good">h2</span>,         <span class="hl-good">h3</span>]
+             ↓ embed(input_ids) ⊕ hidden   <span class="cmt"># EAGLE 的二元组拼接</span>
+             ↓
+embed_in:    [E(d1)⊕h0,  E(d2)⊕h1,  E(t_bonus)⊕h2,  <span class="hl-bad">E(d3残)⊕h3</span>]
+             ↓ EAGLE 单层 transformer (self-attention + FFN)
+             ↓ attention 把这 4 个位置的 K/V 写入 draft KV cache slot 99~102
+             ↓
+out:         [hd0,  hd1,  <span class="hl-good">hd2</span>,  <span class="hl-bad">hd3 垃圾</span>]   <span class="cmt"># shape [4, H]</span>
+
+<span class="cmt"># 只取最后一个有效位置的 hidden</span>
+sample_hidden_states = last_hidden_states[last_token_indices]   <span class="cmt"># 只取 hd2</span>
+
+<span class="cmt"># 走 lm_head + sample，产生第一个 draft</span>
+self.draft_tokens[:num_reqs, <span class="num">0</span>] = self.<span class="fn">sample_draft</span>(...)
+
+<span class="cmt"># 把 hd2 保存下来，给 multi-step decode 第 2 步用</span>
+self.hidden_states[:num_reqs] = hidden_states[last_token_indices]</div>
+
+          <h4>3.4 Multi-step → _generate_draft 自回归</h4>
+          <div class="step-anno">
+            从 step 1 开始，<strong>draft model 不再依赖 target 的 hidden</strong>，而是用<strong>自己上一步产出的 hd</strong> 继续推理下一个 token。这就是 EAGLE 自回归的关键——target 给的语义先验只在 <strong>step 0</strong> 用过一次，从 step 1 开始全靠 draft 自己。
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ===== Section 3: Q&A ===== -->
+    <section class="section">
+      <h2 class="section-title"><span class="emoji">❓</span>核心问题深度解析</h2>
+
+      <!-- Q1 -->
+      <div class="qa-card">
+        <div class="qa-card__q">
+          <span class="qa-card__q-icon">Q</span>
+          <span class="qa-card__q-text">为什么 draft model 要以 (token, hidden_state) 二元组作为输入去计算 draft token？</span>
+        </div>
+        <div class="qa-card__a">
+          <span class="qa-card__a-icon">A</span>
+          <div class="qa-card__a-body">
+            <p><strong>原因 1：避免重复计算</strong> — 直接复用 target model 已经计算好的 hidden states，节省一次完整的 deep transformer forward。</p>
+            <p><strong>原因 2：弥补 draft model 的能力差距</strong> — draft model 网络结构层数远少于 target model，自己计算出来的隐藏层特征信息不如 target 计算好的 hidden states 有效。借用 target 的 hidden 相当于"站在巨人肩膀上"。</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Q2 -->
+      <div class="qa-card">
+        <div class="qa-card__q">
+          <span class="qa-card__q-icon">Q</span>
+          <span class="qa-card__q-text">为什么 draft model 的输入是 token[i+1], hidden_states[i]（错位拼接）？</span>
+        </div>
+        <div class="qa-card__a">
+          <span class="qa-card__a-icon">A</span>
+          <div class="qa-card__a-body">
+            <p>因为 draft model 需要预测 <code>token[i+2]</code>。要预测这个新 token，最直接的输入就是：<strong>"实际的下一个 token"（token[i+1]）</strong> + <strong>"上一步浓缩的语义信息"（hidden[i]）</strong>。</p>
+            <div class="code-block">(<span class="var">token[i+1]</span>, <span class="hl-good">hidden[i]</span>)
+       ↓
+   FC 层（融合二元组）
+       ↓
+  1 层 transformer
+       ↓
+   draft_hidden[i+1]
+       ↓
+     lm_head
+       ↓
+   <span class="hl-good">token[i+2]</span></div>
+            <p>注释：<code>token[i+1]</code> 是<em>实际的下一个 token</em>；<code>hidden[i]</code> 是<em>上一步的"压缩信息"</em>。两者拼接后才能正确指向 <code>token[i+2]</code>。</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Q3 -->
+      <div class="qa-card">
+        <div class="qa-card__q">
+          <span class="qa-card__q-icon">Q</span>
+          <span class="qa-card__q-text">target model 在 execute_model 一次 forward 中存储的 KV cache，是否要等 draft token 确定 accept 后才真正写入？</span>
+        </div>
+        <div class="qa-card__a">
+          <span class="qa-card__a-icon">A</span>
+          <div class="qa-card__a-body">
+            <p><strong>核心结论：</strong>KV cache 在 forward 时<strong>就直接全部写入了</strong>，不会等 accept 结果。target model forward 一旦执行完，所有 query 位置（包括将来会被拒的位置）的 K/V 都已经写入物理内存了。<strong>没有任何"等 accept 后才提交"的逻辑。</strong></p>
+
+            <p>这种激进策略的安全性由以下三点保证：</p>
+
+            <h4>① 已 accept 的 KV 是有效的</h4>
+            <p>它们对应的 token 真正被采纳，可以正常被后续步骤读取。</p>
+
+            <h4>② 被拒的"垃圾 KV"会被下一轮覆盖</h4>
+            <div class="code-block"><span class="cmt"># 下一轮的 forward</span>
+input_ids:  [<span class="hl-good">t_bonus</span>, <span class="var">d1_new</span>, <span class="var">d2_new</span>, <span class="var">d3_new</span>]
+positions:  [102,     103,     104,     105]
+slot 写入:   slot 102 (<span class="hl-bad">覆盖!</span>), slot 103, 104, 105</div>
+
+            <h4>③ 在被覆盖之前，垃圾 KV 也读不到</h4>
+            <p>Postprocess 之后 <code>num_computed_tokens</code> 推进到 102（即"已提交的最后一个 token 是位置 101 的 d2"，加上 t_bonus 在 102 这个位置后等于 103，根据 vLLM 状态机推进规则）。下一轮 attention 计算 <code>seq_lens</code> 时，超出范围的 slot 不会进入合法可读区间。</p>
+            <div class="info-box info-box--green">
+              <p>✅ <strong>结论：</strong>attention 通过 <code>seq_lens</code> 控制可见范围，越界的 KV 永远不会被读到。所以"先写后过滤"是完全安全的，且节省了一次条件分支判断的开销。</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Q4 -->
+      <div class="qa-card">
+        <div class="qa-card__q">
+          <span class="qa-card__q-icon">Q</span>
+          <span class="qa-card__q-text">target model 与 draft model 共用一个 KV cache 存储地址吗？</span>
+        </div>
+        <div class="qa-card__a">
+          <span class="qa-card__a-icon">A</span>
+          <div class="qa-card__a-body">
+            <p><strong>否</strong>。在 EAGLE 方法中，draft model 拥有自己独立的 KV cache 存储空间。两者通过<strong>共享 block_tables（逻辑映射表）</strong>来协调，但物理内存是完全分离的。</p>
+
+            <div class="gpu-mem-box">
+              <div class="gpu-mem-box__title">━━━━━━━━ GPU 显存布局 ━━━━━━━━</div>
+
+              <div class="kv-block kv-block--target">
+                <div class="kv-block__title">▶ target KV cache</div>
+                <div class="kv-block__detail">shape:  [num_blocks, 32 layers, 2, ...]
+写入者: target.forward
+slot 0 .. max_model_len 共用同一块物理内存</div>
+              </div>
+
+              <div class="kv-block kv-block--draft">
+                <div class="kv-block__title">▶ draft KV cache (独立!)</div>
+                <div class="kv-block__detail">shape:  [num_blocks, 1 layer, 2, ...]
+写入者: draft.forward
+跟 target 完全不同的物理内存
+
+prefill 写: slot 99 ~ 102
+step=1 写:  slot 102 (覆盖 d3 残留)
+step=2 写:  slot 103</div>
+              </div>
+
+              <p style="margin-top:14px; font-size:0.82rem; color:#94a3b8; text-align:center;">
+                共享 block_tables（逻辑映射表）<br>
+                draft / target 各自的 attention layer 通过自己的 <code>kv_cache</code> 张量指针访问对应物理内存
+              </p>
+            </div>
+
+            <div class="info-box info-box--purple">
+              <p><strong>设计动机：</strong>target 是 32 层大模型，draft 是 1 层小模型，两者的 KV shape 完全不同（layer 数差异巨大），物理上无法共用同一块内存。但逻辑上的 slot 编号可以对齐（都用 position id 作为 slot 索引），通过共享 block_tables 实现高效协同。</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Q5 -->
+      <div class="qa-card">
+        <div class="qa-card__q">
+          <span class="qa-card__q-icon">Q</span>
+          <span class="qa-card__q-text">seq_lens 变量是什么含义？</span>
+        </div>
+        <div class="qa-card__a">
+          <span class="qa-card__a-icon">A</span>
+          <div class="qa-card__a-body">
+            <p><code>seq_lens[i]</code> = 第 i 个 req 在本次 attention forward 时，可以从 KV cache 中<strong>读取的有效 K/V 长度</strong>（包括本次新写入的 query 部分）。</p>
+            <div class="code-block">seq_lens[i] = num_computed_tokens[i] + query_len[i]
+            = "已经在 KV cache 里的旧 token 数"
+            + "本次新写入的 token 数"</div>
+            <p>这个变量是 attention kernel 用来生成 causal mask 的关键依据——超出 <code>seq_lens</code> 范围的位置一律置为 <code>-inf</code>，从而保证不会读到"未来的"或者"被作废的"垃圾 KV。</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Q6 -->
+      <div class="qa-card">
+        <div class="qa-card__q">
+          <span class="qa-card__q-icon">Q</span>
+          <span class="qa-card__q-text">slot_mapping 是什么？</span>
+        </div>
+        <div class="qa-card__a">
+          <span class="qa-card__a-icon">A</span>
+          <div class="qa-card__a-body">
+            <p><code>slot_mapping[i]</code> = 本次 forward 中第 i 个 token 在 KV cache 中应该<strong>写入（或读取）的物理 slot 编号</strong>。</p>
+            <p>它是从"逻辑 position id"到"物理内存 slot"的一层间接映射，配合 PagedAttention 的 block 机制使用：</p>
+            <div class="code-block">逻辑 position:  99,   100,   101,   102
+                ↓ block_tables 映射
+物理 slot:      slot_a, slot_a+1, slot_b, slot_b+1
+                <span class="cmt"># 跨 block 时不一定连续</span></div>
+            <p>有了 slot_mapping，attention kernel 可以直接通过 slot 编号读写对应的物理内存，而不需要每次都查 block_tables。</p>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ===== Section 4: 总结 ===== -->
+    <section class="section">
+      <h2 class="section-title"><span class="emoji">📝</span>总结</h2>
+
+      <h3>EAGLE 的三个关键设计</h3>
+      <ol>
+        <li><strong>Hidden state 复用：</strong>draft model 直接吃 target 的 hidden state，避免重复深度计算，同时弥补小模型的能力差距</li>
+        <li><strong>错位拼接 (token[i+1], hidden[i])：</strong>用"实际下一个 token"+"上一步压缩信息"二元组，让 draft 1 层网络也能预测出 token[i+2]</li>
+        <li><strong>Multi-step 自回归：</strong>step 0 借用 target hidden，step 1+ 全靠 draft 自己产出的 hidden，实现连续 K 个 draft token 的高效生成</li>
+      </ol>
+
+      <h3>KV cache 关键边界</h3>
+      <table class="data-table">
+        <thead>
+          <tr><th>方面</th><th>结论</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>写入时机</td>
+            <td>target forward 时就<strong>立即全部写入</strong>，不等 accept 结果</td>
+          </tr>
+          <tr>
+            <td>垃圾 KV 处理</td>
+            <td>下一轮直接<strong>覆盖</strong>；覆盖前由 <code>seq_lens</code> 控制不可读</td>
+          </tr>
+          <tr>
+            <td>target / draft 关系</td>
+            <td>物理内存<strong>完全独立</strong>，但通过 <code>block_tables</code> 共享逻辑映射</td>
+          </tr>
+          <tr>
+            <td>可见范围控制</td>
+            <td><code>seq_lens</code>（causal mask 边界）+ <code>slot_mapping</code>（物理 slot 映射）</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="info-box info-box--green">
+        <p>✅ <strong>核心箴言：</strong>EAGLE 的高效来自三个"省"——省 hidden 计算（复用 target）、省 forward 次数（一次 verify K 个 draft）、省条件分支（KV 写入不判断 accept，靠 seq_lens 兜底）。</p>
+      </div>
+    </section>
+
+    <!-- Back -->
+    <a href="../index.html" class="back-top">← 返回 vLLM 模块</a>
+
+  </div>
+</body>
+</html>
