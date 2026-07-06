@@ -170,6 +170,7 @@ a {
 .module-card__accent--cyan { background: linear-gradient(180deg, #22d3ee, #0891b2); }
 .module-card__accent--green { background: linear-gradient(180deg, #4ade80, #16a34a); }
 .module-card__accent--purple { background: linear-gradient(180deg, #c084fc, #7c3aed); }
+.module-card__accent--orange { background: linear-gradient(180deg, #fbbf24, #d97706); }
 
 .module-card__content {
   flex: 1;
@@ -396,6 +397,7 @@ a {
 .module-header__accent--cyan { background: linear-gradient(180deg, #22d3ee, #0891b2); }
 .module-header__accent--green { background: linear-gradient(180deg, #4ade80, #16a34a); }
 .module-header__accent--purple { background: linear-gradient(180deg, #c084fc, #7c3aed); }
+.module-header__accent--orange { background: linear-gradient(180deg, #fbbf24, #d97706); }
 
 .module-header__info {
   flex: 1;

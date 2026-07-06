@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2UV — ieafei's Learning Hub</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🗺️</text></svg>">
+  <link rel="stylesheet" href="../../style.css">
+  <style>
+    .github-repo-card {
+      background: var(--card-bg);
+      border-radius: 12px;
+      padding: 32px;
+      margin: 24px 0;
+      border: 1px solid var(--border-color);
+      transition: all 0.3s ease;
+      position: relative;
+      overflow: hidden;
+    }
+    .github-repo-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 16px 32px rgba(0, 0, 0, 0.15);
+    }
+    .github-repo-header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .github-repo-icon {
+      font-size: 48px;
+      filter: grayscale(0.3);
+    }
+    .github-repo-info h3 {
+      margin: 0 0 8px 0;
+      font-size: 24px;
+      color: var(--text-primary);
+    }
+    .github-repo-info p {
+      margin: 0;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+    .github-stats {
+      display: flex;
+      gap: 24px;
+      margin: 20px 0;
+      flex-wrap: wrap;
+    }
+    .github-stat {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text-secondary);
+    }
+    .github-stat-number {
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+    .github-links {
+      display: flex;
+      gap: 16px;
+      margin-top: 24px;
+    }
+    .github-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 24px;
+      background: var(--accent-orange, #f59e0b);
+      color: white;
+      text-decoration: none;
+      border-radius: 8px;
+      font-weight: 500;
+      transition: all 0.3s ease;
+    }
+    .github-link:hover {
+      opacity: 0.85;
+      transform: translateY(-1px);
+    }
+    .github-link.secondary {
+      background: transparent;
+      border: 1px solid var(--accent-orange, #f59e0b);
+      color: var(--accent-orange, #f59e0b);
+    }
+    .github-link.secondary:hover {
+      background: var(--accent-orange, #f59e0b);
+      color: white;
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-grid"></div>
+  <div class="container">
+
+    <!-- Breadcrumb -->
+    <nav class="breadcrumb">
+      <a href="../../index.html">🏠 Home</a> / <span>🗺️ 2UV</span>
+    </nav>
+
+    <!-- Module Header -->
+    <div class="module-header">
+      <div class="module-header__accent module-header__accent--orange"></div>
+      <div class="module-header__info">
+        <h1 class="module-header__title">🗺️ 2UV — UV Mapping & Parameterization</h1>
+        <p class="module-header__desc">UV展开与参数化学习笔记：纹理映射、网格参数化、UV优化算法等。</p>
+      </div>
+    </div>
+
+    <!-- Notes List -->
+    <section>
+      <h2 class="section-title">
+        <span class="section-title__icon">📝</span>
+        Study Notes
+      </h2>
+      <div class="note-list">
+        <div class="note-card" style="opacity: 0.5; cursor: default;">
+          <span class="note-card__icon">🚧</span>
+          <div class="note-card__body">
+            <h4 class="note-card__title">Notes in progress</h4>
+            <p class="note-card__desc">详细的2UV学习笔记正在整理中，敬请期待！</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Back -->
+    <a href="../../index.html" class="back-link">← 返回首页</a>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <p>Built with ❤️ by <a href="https://github.com/ieafei" target="_blank">ieafei</a></p>
+    </footer>
+  </div>
+</body>
+</html>
